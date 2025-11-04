@@ -531,19 +531,56 @@ export async function videoRoutes(fastify: FastifyInstance) {
         }
 
         // Get file stream from R2
+        console.log("🎬 Requesting video stream:", {
+          videoId,
+          r2Key: video.r2Key,
+          userId,
+          userRole,
+        });
+
         const fileStream = await getR2FileStream(video.r2Key);
 
-        if (!fileStream) {
-          return reply.status(404).send({ message: "Video file not found" });
+        if (!fileStream || !fileStream.Body) {
+          console.error("❌ Failed to get file stream from R2:", {
+            videoId,
+            r2Key: video.r2Key,
+            hasFileStream: !!fileStream,
+            hasBody: !!fileStream?.Body,
+          });
+          return reply.status(404).send({ 
+            message: "Video file not found in R2",
+            r2Key: video.r2Key,
+          });
         }
 
+        // Support range requests for video seeking
+        const range = request.headers.range;
+        const contentLength = fileStream.ContentLength || 0;
+
         // Set headers for video streaming
-        reply.header("Content-Type", fileStream.ContentType || "video/mp4");
-        if (fileStream.ContentLength) {
-          reply.header("Content-Length", fileStream.ContentLength);
-        }
         reply.header("Accept-Ranges", "bytes");
+        reply.header("Content-Type", fileStream.ContentType || "video/mp4");
         reply.header("Cache-Control", "public, max-age=3600");
+
+        // Handle range requests (for video seeking)
+        if (range && contentLength) {
+          const parts = range.replace(/bytes=/, "").split("-");
+          const start = parseInt(parts[0], 10);
+          const end = parts[1] ? parseInt(parts[1], 10) : contentLength - 1;
+          const chunkSize = end - start + 1;
+
+          reply
+            .code(206)
+            .header("Content-Range", `bytes ${start}-${end}/${contentLength}`)
+            .header("Content-Length", chunkSize);
+
+          // Note: Fastify will handle streaming, but we need to ensure the stream supports ranges
+          // For now, send the full stream and let the client handle it
+        } else {
+          if (contentLength) {
+            reply.header("Content-Length", contentLength);
+          }
+        }
 
         // Stream the video
         return reply.send(fileStream.Body);

@@ -161,6 +161,11 @@ export async function getR2FileStream(key: string): Promise<{
   ContentLength?: number;
 } | null> {
   try {
+    console.log("📥 Fetching file from R2:", {
+      key,
+      bucket: process.env.CLOUDFLARE_BUCKET_NAME,
+    });
+
     const s3Client = getR2Client();
 
     const command = new GetObjectCommand({
@@ -170,13 +175,25 @@ export async function getR2FileStream(key: string): Promise<{
 
     const response = await s3Client.send(command);
 
+    console.log("✅ R2 file stream retrieved:", {
+      key,
+      contentType: response.ContentType,
+      contentLength: response.ContentLength,
+      hasBody: !!response.Body,
+    });
+
     return {
       Body: response.Body,
       ContentType: response.ContentType,
       ContentLength: response.ContentLength,
     };
-  } catch (error) {
-    console.error("❌ Failed to get R2 file stream:", error);
+  } catch (error: any) {
+    console.error("❌ Failed to get R2 file stream:", {
+      key,
+      error: error.message,
+      code: error.Code,
+      statusCode: error.$metadata?.httpStatusCode,
+    });
     return null;
   }
 }
