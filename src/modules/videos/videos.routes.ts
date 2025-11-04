@@ -10,6 +10,7 @@ import {
   generateStreamUrl,
   isR2Configured,
   uploadFileToR2,
+  getR2FileStream,
 } from "../../services/cloudflare-r2";
 
 // Type declarations for Fastify multipart plugin
@@ -473,6 +474,82 @@ export async function videoRoutes(fastify: FastifyInstance) {
         return reply
           .status(500)
           .send({ message: "Failed to generate stream URL" });
+      }
+    },
+  });
+
+  // Proxy endpoint to stream video directly (avoids CORS issues)
+  fastify.get("/videos/:videoId/proxy", {
+    preHandler: [fastify.authenticate],
+    handler: async (request, reply) => {
+      try {
+        const { videoId } = request.params as { videoId: string };
+        const userId = request.user.id;
+        const userRole = request.user.role;
+
+        // Get the video with course information
+        const video = await db.query.videos.findFirst({
+          where: eq(videos.id, videoId),
+          with: {
+            course: true,
+          },
+        });
+
+        if (!video) {
+          return reply.status(404).send({ message: "Video not found" });
+        }
+
+        // Check access permissions
+        if (userRole === "creator" && video.course.creatorId !== userId) {
+          return reply.status(403).send({
+            message: "You can only access videos from your own courses",
+          });
+        }
+
+        if (userRole === "student") {
+          // Check if student is enrolled in this course
+          const enrollment = await db.query.enrollments.findFirst({
+            where: and(
+              eq(enrollments.studentId, userId),
+              eq(enrollments.courseId, video.courseId)
+            ),
+          });
+
+          if (!enrollment) {
+            return reply.status(403).send({
+              message: "You must be enrolled in this course to view this video",
+            });
+          }
+        }
+
+        // Check if R2 is configured
+        if (!isR2Configured()) {
+          return reply.status(500).send({
+            error: "Cloudflare R2 not configured",
+            message: "Video streaming is not available",
+          });
+        }
+
+        // Get file stream from R2
+        const fileStream = await getR2FileStream(video.r2Key);
+
+        if (!fileStream) {
+          return reply.status(404).send({ message: "Video file not found" });
+        }
+
+        // Set headers for video streaming
+        reply.header("Content-Type", fileStream.ContentType || "video/mp4");
+        if (fileStream.ContentLength) {
+          reply.header("Content-Length", fileStream.ContentLength);
+        }
+        reply.header("Accept-Ranges", "bytes");
+        reply.header("Cache-Control", "public, max-age=3600");
+
+        // Stream the video
+        return reply.send(fileStream.Body);
+      } catch (error) {
+        console.error("Error streaming video:", error);
+        return reply.status(500).send({ message: "Failed to stream video" });
       }
     },
   });

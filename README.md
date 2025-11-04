@@ -54,11 +54,13 @@ git push -u origin main
 #### Build & Start Commands
 
 - **Build Command:**
+
 ```bash
 npm install && npx drizzle-kit migrate --config=drizzle.prod.config.cjs
 ```
 
 - **Start Command:**
+
 ```bash
 npm run prod
 ```
@@ -89,6 +91,11 @@ CLOUDFLARE_R2_ENDPOINT=https://your-account-id.r2.cloudflarestorage.com
 
 # OpenAI (use a mesma key)
 OPENAI_API_KEY=sk-proj-your-openai-key
+
+# CORS - URLs do frontend (separadas por vírgula para múltiplos domínios)
+FRONTEND_URL=https://seu-frontend.onrender.com,https://seu-dominio.com
+# Ou use ALLOWED_ORIGINS para adicionar mais domínios
+ALLOWED_ORIGINS=https://outro-dominio.com
 ```
 
 5. Clique em **"Create Web Service"**
@@ -109,8 +116,48 @@ curl https://ai-am-a-mentor-api.onrender.com/health
 - `npm run db:migrate:prod` - Aplica migrações (produção)
 - `npm run build` - Build para produção (instala deps e roda migrações)
 
+## 🔒 Configuração de CORS
+
+### Como Funciona
+
+**✅ Cloudflare R2:** Com o endpoint proxy (`/api/videos/:videoId/proxy`), você **NÃO precisa** configurar CORS no bucket do R2. O navegador acessa a API (mesma origem ou com CORS configurado), e a API acessa o R2 (server-to-server, sem CORS).
+
+**✅ Backend API:** Você **precisa** configurar CORS para permitir o domínio do frontend em produção.
+
+### Configuração para Produção
+
+1. **No Render**, adicione a variável de ambiente:
+
+   ```bash
+   FRONTEND_URL=https://seu-frontend.onrender.com
+   ```
+
+2. **Para múltiplos domínios**, separe por vírgula:
+
+   ```bash
+   FRONTEND_URL=https://seu-frontend.onrender.com,https://seu-dominio.com
+   ```
+
+3. **Para adicionar mais origens**, use também:
+   ```bash
+   ALLOWED_ORIGINS=https://outro-dominio.com
+   ```
+
+### Exemplo Completo
+
+Se seu frontend estiver em:
+
+- `https://meu-app.onrender.com` (produção)
+- `http://localhost:3000` (desenvolvimento - já está permitido)
+
+Configure no Render:
+
+```bash
+FRONTEND_URL=https://meu-app.onrender.com
+```
+
+**Nota:** Em desenvolvimento (`NODE_ENV !== "production"`), todas as origens são permitidas automaticamente para facilitar o desenvolvimento.
+
 ## ✅ Pronto!
 
 Agora você tem um backend standalone muito mais simples de gerenciar e fazer deploy!
-
-

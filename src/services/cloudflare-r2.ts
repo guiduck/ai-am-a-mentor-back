@@ -153,6 +153,35 @@ export async function generateUploadUrl(
 }
 
 /**
+ * Get file stream from R2 (for proxy streaming)
+ */
+export async function getR2FileStream(key: string): Promise<{
+  Body: any; // Readable stream
+  ContentType?: string;
+  ContentLength?: number;
+} | null> {
+  try {
+    const s3Client = getR2Client();
+
+    const command = new GetObjectCommand({
+      Bucket: process.env.CLOUDFLARE_BUCKET_NAME!,
+      Key: key,
+    });
+
+    const response = await s3Client.send(command);
+
+    return {
+      Body: response.Body,
+      ContentType: response.ContentType,
+      ContentLength: response.ContentLength,
+    };
+  } catch (error) {
+    console.error("❌ Failed to get R2 file stream:", error);
+    return null;
+  }
+}
+
+/**
  * Get R2 configuration status
  */
 export function getR2Config() {

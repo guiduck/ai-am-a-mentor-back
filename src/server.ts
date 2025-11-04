@@ -23,7 +23,39 @@ fastify.register(require("@fastify/cookie"));
 
 // Register CORS
 fastify.register(require("@fastify/cors"), {
-  origin: ["http://localhost:3000", "http://localhost:3001"],
+  origin: (origin, cb) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return cb(null, true);
+
+    // Build list of allowed origins
+    const allowedOrigins = [
+      // Development
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "https://localhost:3000",
+      // Production frontend URL from env (can be comma-separated for multiple domains)
+      ...(process.env.FRONTEND_URL
+        ? process.env.FRONTEND_URL.split(",").map((url) => url.trim())
+        : []),
+      // Additional allowed origins from env (comma-separated)
+      ...(process.env.ALLOWED_ORIGINS
+        ? process.env.ALLOWED_ORIGINS.split(",").map((url) => url.trim())
+        : []),
+    ].filter(Boolean);
+
+    if (allowedOrigins.includes(origin)) {
+      cb(null, true);
+    } else {
+      // For development, allow all origins (convenience)
+      if (process.env.NODE_ENV !== "production") {
+        cb(null, true);
+      } else {
+        // In production, only allow configured origins
+        console.warn(`CORS blocked origin: ${origin}`);
+        cb(new Error("Not allowed by CORS"), false);
+      }
+    }
+  },
   credentials: true,
 });
 
