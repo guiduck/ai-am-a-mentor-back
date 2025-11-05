@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import fp from "fastify-plugin";
-import jwt from "jsonwebtoken";
+import * as jwt from "jsonwebtoken";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -11,6 +11,20 @@ declare module "fastify" {
       id: string;
       role: string;
     };
+  }
+  interface FastifyReply {
+    setCookie(
+      name: string,
+      value: string,
+      options?: {
+        httpOnly?: boolean;
+        secure?: boolean;
+        sameSite?: "strict" | "lax" | "none";
+        path?: string;
+        maxAge?: number;
+        domain?: string;
+      }
+    ): this;
   }
 }
 

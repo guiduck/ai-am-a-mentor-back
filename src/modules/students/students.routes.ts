@@ -1,10 +1,11 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
+import * as bcrypt from "bcrypt";
+import * as jwt from "jsonwebtoken";
 import { db } from "../../db";
 import { users, courses, enrollments } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
+import "@fastify/cookie";
 
 const registerStudentSchema = z.object({
   username: z.string(),
@@ -75,7 +76,19 @@ export async function studentRoutes(fastify: FastifyInstance) {
       { expiresIn: "1h" }
     );
 
-    return { token };
+    // Set cookie for automatic authentication (needed for video streaming)
+    // For cross-origin cookies, we need SameSite=None and Secure=true
+    const isProduction = process.env.NODE_ENV === "production";
+    reply.setCookie("access_token", token, {
+      httpOnly: false, // Allow JavaScript to read it
+      secure: isProduction, // HTTPS required for SameSite=None
+      sameSite: isProduction ? "none" : "lax", // None for cross-origin, lax for same-origin
+      path: "/", // Available for all paths
+      maxAge: 3600, // 1 hour (same as token expiration)
+      domain: undefined, // Let browser handle domain (don't set for cross-origin)
+    });
+
+    return { access_token: token, token }; // Return both for compatibility
   });
 
   // Enroll in a course

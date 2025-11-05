@@ -23,7 +23,10 @@ fastify.register(require("@fastify/cookie"));
 
 // Register CORS
 fastify.register(require("@fastify/cors"), {
-  origin: (origin, cb) => {
+  origin: (
+    origin: string | undefined,
+    cb: (err: Error | null, allow: boolean) => void
+  ) => {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return cb(null, true);
 
