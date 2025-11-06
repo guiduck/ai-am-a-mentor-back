@@ -557,6 +557,18 @@ export async function videoRoutes(fastify: FastifyInstance) {
         const range = request.headers.range;
         const contentLength = fileStream.ContentLength || 0;
 
+        // Parse range if present
+        let start = 0;
+        let end = contentLength - 1;
+        let chunkSize = contentLength;
+        
+        if (range && contentLength) {
+          const parts = range.replace(/bytes=/, "").split("-");
+          start = parseInt(parts[0], 10);
+          end = parts[1] ? parseInt(parts[1], 10) : contentLength - 1;
+          chunkSize = end - start + 1;
+        }
+
         // Set headers for video streaming
         reply.header("Accept-Ranges", "bytes");
         reply.header("Content-Type", fileStream.ContentType || "video/mp4");
@@ -564,26 +576,97 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
         // Handle range requests (for video seeking)
         if (range && contentLength) {
-          const parts = range.replace(/bytes=/, "").split("-");
-          const start = parseInt(parts[0], 10);
-          const end = parts[1] ? parseInt(parts[1], 10) : contentLength - 1;
-          const chunkSize = end - start + 1;
-
           reply
             .code(206)
             .header("Content-Range", `bytes ${start}-${end}/${contentLength}`)
-            .header("Content-Length", chunkSize);
-
-          // Note: Fastify will handle streaming, but we need to ensure the stream supports ranges
-          // For now, send the full stream and let the client handle it
+            .header("Content-Length", chunkSize.toString());
         } else {
           if (contentLength) {
-            reply.header("Content-Length", contentLength);
+            reply.header("Content-Length", contentLength.toString());
           }
         }
 
-        // Stream the video
-        return reply.send(fileStream.Body);
+        console.log("📤 Sending stream to client:", {
+          statusCode: range && contentLength ? 206 : 200,
+          contentType: fileStream.ContentType,
+          contentLength: range && contentLength ? chunkSize : contentLength,
+          hasStream: !!fileStream.Body,
+          isPipeable: fileStream.Body?.pipe ? true : false,
+          range: range || "none",
+        });
+
+        // Add event listeners to track stream lifecycle
+        if (fileStream.Body && fileStream.Body.on) {
+          fileStream.Body.on("data", (chunk) => {
+            // Log first chunk to confirm streaming started
+            if (!fileStream.Body._loggedFirstChunk) {
+              console.log("📦 First chunk received from R2, size:", chunk.length);
+              fileStream.Body._loggedFirstChunk = true;
+            }
+          });
+
+          fileStream.Body.on("end", () => {
+            console.log("✅ R2 stream ended successfully");
+          });
+
+          fileStream.Body.on("error", (error) => {
+            console.error("❌ R2 stream error:", error);
+          });
+
+          fileStream.Body.on("close", () => {
+            console.log("📪 R2 stream closed");
+          });
+        }
+
+        // Track reply events before piping
+        reply.raw.on("close", () => {
+          console.log("📪 Client connection closed");
+          // Clean up R2 stream when client disconnects
+          if (fileStream.Body && fileStream.Body.destroy) {
+            fileStream.Body.destroy();
+          }
+        });
+
+        reply.raw.on("finish", () => {
+          console.log("✅ Response finished sending");
+        });
+
+        reply.raw.on("error", (error) => {
+          console.error("❌ Response stream error:", error);
+          // Clean up on error
+          if (fileStream.Body && fileStream.Body.destroy) {
+            fileStream.Body.destroy();
+          }
+        });
+
+        // Handle R2 stream errors
+        if (fileStream.Body && fileStream.Body.on) {
+          fileStream.Body.on("error", (error) => {
+            console.error("❌ R2 stream error:", error);
+            if (!reply.raw.destroyed) {
+              reply.raw.destroy();
+            }
+          });
+
+          fileStream.Body.on("end", () => {
+            console.log("✅ R2 stream ended successfully");
+          });
+        }
+
+        // Pipe R2 stream directly to response
+        // Use pipeline for better error handling
+        const stream = fileStream.Body;
+        if (stream && stream.pipe) {
+          console.log("📤 Piping R2 stream directly to client...");
+          stream.pipe(reply.raw);
+          
+          // Don't return anything - let the pipe handle it
+          return;
+        } else {
+          // Fallback to reply.send if pipe is not available
+          console.log("📤 Using reply.send as fallback...");
+          return reply.send(stream);
+        }
       } catch (error) {
         console.error("Error streaming video:", error);
         return reply.status(500).send({ message: "Failed to stream video" });
