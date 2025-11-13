@@ -38,7 +38,11 @@ fastify.register(require("@fastify/cors"), {
       process.env.FRONTEND_URL?.replace(/\/$/, ""),
     ].filter(Boolean);
 
-    if (allowedOrigins.includes(origin)) {
+    // Check if origin is in allowed list or is a Netlify deploy
+    const isNetlifyDeploy = origin.endsWith(".netlify.app");
+    const isAllowed = allowedOrigins.includes(origin) || isNetlifyDeploy;
+
+    if (isAllowed) {
       cb(null, true);
     } else {
       // For development, allow all origins (convenience)
