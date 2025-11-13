@@ -38,11 +38,11 @@ fastify.register(require("@fastify/cors"), {
       "https://localhost:3000",
       // Production frontend URL from env (can be comma-separated for multiple domains)
       ...(process.env.FRONTEND_URL
-        ? process.env.FRONTEND_URL.split(",").map((url) => url.trim())
+        ? process.env.FRONTEND_URL.split(",").map((url) => url.trim().replace(/\/$/, ""))
         : []),
       // Additional allowed origins from env (comma-separated)
       ...(process.env.ALLOWED_ORIGINS
-        ? process.env.ALLOWED_ORIGINS.split(",").map((url) => url.trim())
+        ? process.env.ALLOWED_ORIGINS.split(",").map((url) => url.trim().replace(/\/$/, ""))
         : []),
     ].filter(Boolean);
 
@@ -55,6 +55,7 @@ fastify.register(require("@fastify/cors"), {
       } else {
         // In production, only allow configured origins
         console.warn(`CORS blocked origin: ${origin}`);
+        console.warn(`Allowed origins: ${allowedOrigins.join(", ")}`);
         cb(new Error("Not allowed by CORS"), false);
       }
     }
