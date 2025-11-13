@@ -35,7 +35,7 @@ fastify.register(require("@fastify/cors"), {
       "http://localhost:3000",
       "http://localhost:3001",
       "https://localhost:3000",
-      process.env.FRONTEND_URL,
+      process.env.FRONTEND_URL?.replace(/\/$/, ""),
     ].filter(Boolean);
 
     if (allowedOrigins.includes(origin)) {
