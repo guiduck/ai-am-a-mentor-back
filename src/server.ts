@@ -32,18 +32,10 @@ fastify.register(require("@fastify/cors"), {
 
     // Build list of allowed origins
     const allowedOrigins = [
-      // Development
       "http://localhost:3000",
       "http://localhost:3001",
       "https://localhost:3000",
-      // Production frontend URL from env (can be comma-separated for multiple domains)
-      ...(process.env.FRONTEND_URL
-        ? process.env.FRONTEND_URL.split(",").map((url) => url.trim().replace(/\/$/, ""))
-        : []),
-      // Additional allowed origins from env (comma-separated)
-      ...(process.env.ALLOWED_ORIGINS
-        ? process.env.ALLOWED_ORIGINS.split(",").map((url) => url.trim().replace(/\/$/, ""))
-        : []),
+      process.env.FRONTEND_URL,
     ].filter(Boolean);
 
     if (allowedOrigins.includes(origin)) {
