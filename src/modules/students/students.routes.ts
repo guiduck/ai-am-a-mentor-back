@@ -64,8 +64,23 @@ export async function studentRoutes(fastify: FastifyInstance) {
         user: newUser[0],
       });
     } catch (error: any) {
-      console.error("Error registering student:", error);
+      // Log detailed error information
+      fastify.log.error({
+        error: error.message,
+        code: error.code,
+        constraint: error.constraint,
+        stack: error.stack,
+        fullError: JSON.stringify(error, Object.getOwnPropertyNames(error)),
+      }, "Error registering student");
       
+      console.error("Error registering student:", {
+        message: error.message,
+        code: error.code,
+        constraint: error.constraint,
+        cause: error.cause,
+        stack: error.stack,
+      });
+
       // Handle unique constraint violations
       if (error.code === "23505") {
         // PostgreSQL unique violation
@@ -81,17 +96,26 @@ export async function studentRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // Handle other database errors
-      if (error.message?.includes("Failed query")) {
+      // Handle Drizzle ORM errors
+      if (error.message?.includes("Failed query") || error.type === "DrizzleQueryError") {
+        fastify.log.error({
+          query: error.query,
+          params: error.params,
+          cause: error.cause,
+        }, "Database query failed");
+        
         return reply.status(500).send({
           message: "Database error. Please check if migrations are up to date.",
           error: error.message,
+          query: error.query,
+          params: error.params,
         });
       }
 
       return reply.status(500).send({
         message: "Failed to create student account",
         error: error.message,
+        code: error.code,
       });
     }
   });
