@@ -11,7 +11,8 @@
     "db:generate": "npx drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate": "dotenv drizzle-kit migrate --config=drizzle-dev.config.ts",
     "build": "npm install && npx drizzle-kit migrate --config=drizzle.prod.config.cjs",
-    "db:migrate:prod": "npx drizzle-kit migrate --config=drizzle.prod.config.cjs"
+    "db:migrate:prod": "npx drizzle-kit migrate --config=drizzle.prod.config.cjs",
+    "db:check": "node scripts/check-table-structure.js"
   },
   "keywords": [],
   "author": "",

@@ -71,14 +71,17 @@ export async function creatorRoutes(fastify: FastifyInstance) {
         .send({ message: "Creator created successfully", user: newUser[0] });
     } catch (error: any) {
       // Log detailed error information
-      fastify.log.error({
-        error: error.message,
-        code: error.code,
-        constraint: error.constraint,
-        stack: error.stack,
-        fullError: JSON.stringify(error, Object.getOwnPropertyNames(error)),
-      }, "Error registering creator");
-      
+      fastify.log.error(
+        {
+          error: error.message,
+          code: error.code,
+          constraint: error.constraint,
+          stack: error.stack,
+          fullError: JSON.stringify(error, Object.getOwnPropertyNames(error)),
+        },
+        "Error registering creator"
+      );
+
       console.error("Error registering creator:", {
         message: error.message,
         code: error.code,
@@ -103,13 +106,19 @@ export async function creatorRoutes(fastify: FastifyInstance) {
       }
 
       // Handle Drizzle ORM errors
-      if (error.message?.includes("Failed query") || error.type === "DrizzleQueryError") {
-        fastify.log.error({
-          query: error.query,
-          params: error.params,
-          cause: error.cause,
-        }, "Database query failed");
-        
+      if (
+        error.message?.includes("Failed query") ||
+        error.type === "DrizzleQueryError"
+      ) {
+        fastify.log.error(
+          {
+            query: error.query,
+            params: error.params,
+            cause: error.cause,
+          },
+          "Database query failed"
+        );
+
         return reply.status(500).send({
           message: "Database error. Please check if migrations are up to date.",
           error: error.message,
@@ -193,12 +202,10 @@ export async function creatorRoutes(fastify: FastifyInstance) {
         tags: newCourse[0].tags ? JSON.parse(newCourse[0].tags) : [],
       };
 
-      return reply
-        .status(201)
-        .send({
-          message: "Course created successfully",
-          course: courseWithTags,
-        });
+      return reply.status(201).send({
+        message: "Course created successfully",
+        course: courseWithTags,
+      });
     }
   );
 
