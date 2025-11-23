@@ -3,7 +3,7 @@ import { z } from "zod";
 import * as bcrypt from "bcrypt";
 import * as jwt from "jsonwebtoken";
 import { db } from "../../db";
-import { users, courses } from "../../db/schema";
+import { users, courses, videos } from "../../db/schema";
 import { eq } from "drizzle-orm";
 import "@fastify/cookie";
 
@@ -22,39 +22,84 @@ const createCourseSchema = z.object({
   title: z.string(),
   description: z.string(),
   price: z.number(),
+  tags: z.array(z.string()).optional().default([]),
 });
 
 export async function creatorRoutes(fastify: FastifyInstance) {
   fastify.post("/creators/register", async (request, reply) => {
-    const { username, email, password } = registerCreatorSchema.parse(
-      request.body
-    );
+    try {
+      const { username, email, password } = registerCreatorSchema.parse(
+        request.body
+      );
 
-    const existingUser = await db.query.users.findFirst({
-      where: eq(users.email, email),
-    });
+      // Check if email already exists
+      const existingUserByEmail = await db.query.users.findFirst({
+        where: eq(users.email, email),
+      });
 
-    if (existingUser) {
+      if (existingUserByEmail) {
+        return reply.status(409).send({
+          message: "User with this email already exists",
+        });
+      }
+
+      // Check if username already exists
+      const existingUserByUsername = await db.query.users.findFirst({
+        where: eq(users.username, username),
+      });
+
+      if (existingUserByUsername) {
+        return reply.status(409).send({
+          message: "Username already taken",
+        });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      const newUser = await db
+        .insert(users)
+        .values({
+          username,
+          email,
+          passwordHash: hashedPassword,
+          role: "creator",
+        })
+        .returning();
+
       return reply
-        .status(409)
-        .send({ message: "User with this email already exists" });
+        .status(201)
+        .send({ message: "Creator created successfully", user: newUser[0] });
+    } catch (error: any) {
+      console.error("Error registering creator:", error);
+      
+      // Handle unique constraint violations
+      if (error.code === "23505") {
+        // PostgreSQL unique violation
+        if (error.constraint === "users_email_unique") {
+          return reply.status(409).send({
+            message: "User with this email already exists",
+          });
+        }
+        if (error.constraint === "users_username_unique") {
+          return reply.status(409).send({
+            message: "Username already taken",
+          });
+        }
+      }
+
+      // Handle other database errors
+      if (error.message?.includes("Failed query")) {
+        return reply.status(500).send({
+          message: "Database error. Please check if migrations are up to date.",
+          error: error.message,
+        });
+      }
+
+      return reply.status(500).send({
+        message: "Failed to create creator account",
+        error: error.message,
+      });
     }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const newUser = await db
-      .insert(users)
-      .values({
-        username,
-        email,
-        passwordHash: hashedPassword,
-        role: "creator",
-      })
-      .returning();
-
-    return reply
-      .status(201)
-      .send({ message: "Creator created successfully", user: newUser[0] });
   });
 
   fastify.post("/creators/login", async (request, reply) => {
@@ -99,9 +144,12 @@ export async function creatorRoutes(fastify: FastifyInstance) {
     "/courses",
     { preHandler: [fastify.authenticate] },
     async (request, reply) => {
-      const { title, description, price } = createCourseSchema.parse(
-        request.body
-      );
+      const {
+        title,
+        description,
+        price,
+        tags = [],
+      } = createCourseSchema.parse(request.body);
       const creatorId = request.user.id;
 
       const newCourse = await db
@@ -111,12 +159,22 @@ export async function creatorRoutes(fastify: FastifyInstance) {
           description,
           price: price.toString(),
           creatorId,
+          tags: tags.length > 0 ? JSON.stringify(tags) : null,
         })
         .returning();
 
+      // Parse tags back to array for response
+      const courseWithTags = {
+        ...newCourse[0],
+        tags: newCourse[0].tags ? JSON.parse(newCourse[0].tags) : [],
+      };
+
       return reply
         .status(201)
-        .send({ message: "Course created successfully", course: newCourse[0] });
+        .send({
+          message: "Course created successfully",
+          course: courseWithTags,
+        });
     }
   );
 
@@ -125,9 +183,12 @@ export async function creatorRoutes(fastify: FastifyInstance) {
     { preHandler: [fastify.authenticate] },
     async (request, reply) => {
       const { courseId } = request.params as { courseId: string };
-      const { title, description, price } = createCourseSchema.parse(
-        request.body
-      );
+      const {
+        title,
+        description,
+        price,
+        tags = [],
+      } = createCourseSchema.parse(request.body);
 
       const updatedCourse = await db
         .update(courses)
@@ -135,13 +196,20 @@ export async function creatorRoutes(fastify: FastifyInstance) {
           title,
           description,
           price: price.toString(),
+          tags: tags.length > 0 ? JSON.stringify(tags) : null,
         })
         .where(eq(courses.id, courseId))
         .returning();
 
+      // Parse tags back to array for response
+      const courseWithTags = {
+        ...updatedCourse[0],
+        tags: updatedCourse[0].tags ? JSON.parse(updatedCourse[0].tags) : [],
+      };
+
       return {
         message: "Course updated successfully",
-        course: updatedCourse[0],
+        course: courseWithTags,
       };
     }
   );
@@ -156,7 +224,17 @@ export async function creatorRoutes(fastify: FastifyInstance) {
         where: eq(courses.id, courseId),
       });
 
-      return course;
+      if (!course) {
+        return reply.status(404).send({ message: "Course not found" });
+      }
+
+      // Parse tags from JSON string to array
+      const courseWithTags = {
+        ...course,
+        tags: course.tags ? JSON.parse(course.tags) : [],
+      };
+
+      return courseWithTags;
     }
   );
 
@@ -214,9 +292,33 @@ export async function creatorRoutes(fastify: FastifyInstance) {
             username: true,
           },
         },
+        videos: {
+          columns: {
+            duration: true,
+          },
+        },
       },
     });
 
-    return allCourses;
+    // Calculate total duration and parse tags for each course
+    const coursesWithDuration = allCourses.map((course) => {
+      const totalDuration = course.videos
+        ? course.videos.reduce((sum, video) => sum + (video.duration || 0), 0)
+        : 0;
+
+      // Parse tags from JSON string to array
+      const tags = course.tags ? JSON.parse(course.tags) : [];
+
+      // Remove videos array and add totalDuration and parsed tags
+      const { videos, ...courseWithoutVideos } = course;
+      return {
+        ...courseWithoutVideos,
+        totalDuration, // in seconds
+        videoCount: videos?.length || 0,
+        tags, // parsed array of strings
+      };
+    });
+
+    return coursesWithDuration;
   });
 }

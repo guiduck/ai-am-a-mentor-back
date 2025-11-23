@@ -27,6 +27,7 @@ export const courses = pgTable("courses", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  tags: text("tags"), // JSON array of strings stored as text
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

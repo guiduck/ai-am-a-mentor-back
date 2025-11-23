@@ -20,36 +20,80 @@ const loginStudentSchema = z.object({
 
 export async function studentRoutes(fastify: FastifyInstance) {
   fastify.post("/students/register", async (request, reply) => {
-    const { username, email, password } = registerStudentSchema.parse(
-      request.body
-    );
+    try {
+      const { username, email, password } = registerStudentSchema.parse(
+        request.body
+      );
 
-    const existingUser = await db.query.users.findFirst({
-      where: eq(users.email, email),
-    });
+      // Check if email already exists
+      const existingUserByEmail = await db.query.users.findFirst({
+        where: eq(users.email, email),
+      });
 
-    if (existingUser) {
-      return reply
-        .status(409)
-        .send({ message: "User with this email already exists" });
+      if (existingUserByEmail) {
+        return reply.status(409).send({
+          message: "User with this email already exists",
+        });
+      }
+
+      // Check if username already exists
+      const existingUserByUsername = await db.query.users.findFirst({
+        where: eq(users.username, username),
+      });
+
+      if (existingUserByUsername) {
+        return reply.status(409).send({
+          message: "Username already taken",
+        });
+      }
+
+      const passwordHash = await bcrypt.hash(password, 10);
+
+      const newUser = await db
+        .insert(users)
+        .values({
+          username,
+          email,
+          passwordHash,
+          role: "student",
+        })
+        .returning();
+
+      return reply.status(201).send({
+        message: "Student account successfully created",
+        user: newUser[0],
+      });
+    } catch (error: any) {
+      console.error("Error registering student:", error);
+      
+      // Handle unique constraint violations
+      if (error.code === "23505") {
+        // PostgreSQL unique violation
+        if (error.constraint === "users_email_unique") {
+          return reply.status(409).send({
+            message: "User with this email already exists",
+          });
+        }
+        if (error.constraint === "users_username_unique") {
+          return reply.status(409).send({
+            message: "Username already taken",
+          });
+        }
+      }
+
+      // Handle other database errors
+      if (error.message?.includes("Failed query")) {
+        return reply.status(500).send({
+          message: "Database error. Please check if migrations are up to date.",
+          error: error.message,
+        });
+      }
+
+      return reply.status(500).send({
+        message: "Failed to create student account",
+        error: error.message,
+      });
     }
-
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    const newUser = await db
-      .insert(users)
-      .values({
-        username,
-        email,
-        passwordHash,
-        role: "student",
-      })
-      .returning();
-
-    return reply.status(201).send({
-      message: "Student account successfully created",
-      user: newUser[0],
-    });
   });
 
   // Student login

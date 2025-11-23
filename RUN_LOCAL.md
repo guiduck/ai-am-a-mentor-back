@@ -129,3 +129,6 @@ E no `.env.local` da API:
 ```env
 FRONTEND_URL=http://localhost:3000
 ```
+
+
+
