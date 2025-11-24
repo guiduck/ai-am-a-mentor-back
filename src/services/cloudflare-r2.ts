@@ -7,6 +7,7 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -195,6 +196,53 @@ export async function getR2FileStream(key: string): Promise<{
       statusCode: error.$metadata?.httpStatusCode,
     });
     return null;
+  }
+}
+
+/**
+ * Delete file from Cloudflare R2
+ */
+export async function deleteFileFromR2(key: string): Promise<boolean> {
+  try {
+    if (!isR2Configured()) {
+      console.warn("⚠️ R2 not configured, skipping file deletion:", key);
+      return false;
+    }
+
+    console.log("🗑️ Deleting file from R2:", {
+      key,
+      bucket: process.env.CLOUDFLARE_BUCKET_NAME,
+    });
+
+    const s3Client = getR2Client();
+
+    const command = new DeleteObjectCommand({
+      Bucket: process.env.CLOUDFLARE_BUCKET_NAME!,
+      Key: key,
+    });
+
+    await s3Client.send(command);
+
+    console.log("✅ File deleted from R2:", {
+      key,
+      bucket: process.env.CLOUDFLARE_BUCKET_NAME,
+    });
+
+    return true;
+  } catch (error: any) {
+    // Don't throw error if file doesn't exist (404)
+    if (error.Code === "NoSuchKey" || error.$metadata?.httpStatusCode === 404) {
+      console.log("ℹ️ File not found in R2 (already deleted or never existed):", key);
+      return true; // Consider it successful since the goal is to have it deleted
+    }
+
+    console.error("❌ R2 delete error:", {
+      key,
+      error: error.message,
+      code: error.Code,
+      statusCode: error.$metadata?.httpStatusCode,
+    });
+    return false;
   }
 }
 

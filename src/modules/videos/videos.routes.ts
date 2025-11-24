@@ -11,6 +11,7 @@ import {
   isR2Configured,
   uploadFileToR2,
   getR2FileStream,
+  deleteFileFromR2,
 } from "../../services/cloudflare-r2";
 
 // Type declarations for Fastify multipart plugin
@@ -395,6 +396,16 @@ export async function videoRoutes(fastify: FastifyInstance) {
           });
         }
 
+        // Delete video file from R2 before deleting from database
+        if (video.r2Key) {
+          await deleteFileFromR2(video.r2Key);
+        }
+
+        // Delete transcript file from R2 if exists
+        if (video.transcriptR2Key) {
+          await deleteFileFromR2(video.transcriptR2Key);
+        }
+
         // Delete the video (transcripts will be deleted by CASCADE)
         await db.delete(videos).where(eq(videos.id, videoId));
 
@@ -547,7 +558,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
             hasFileStream: !!fileStream,
             hasBody: !!fileStream?.Body,
           });
-          return reply.status(404).send({ 
+          return reply.status(404).send({
             message: "Video file not found in R2",
             r2Key: video.r2Key,
           });
@@ -561,7 +572,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         let start = 0;
         let end = contentLength - 1;
         let chunkSize = contentLength;
-        
+
         if (range && contentLength) {
           const parts = range.replace(/bytes=/, "").split("-");
           start = parseInt(parts[0], 10);
@@ -597,10 +608,13 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
         // Add event listeners to track stream lifecycle
         if (fileStream.Body && fileStream.Body.on) {
-          fileStream.Body.on("data", (chunk) => {
+          fileStream.Body.on("data", (chunk: Buffer | Uint8Array) => {
             // Log first chunk to confirm streaming started
             if (!fileStream.Body._loggedFirstChunk) {
-              console.log("📦 First chunk received from R2, size:", chunk.length);
+              console.log(
+                "📦 First chunk received from R2, size:",
+                chunk.length
+              );
               fileStream.Body._loggedFirstChunk = true;
             }
           });
@@ -609,7 +623,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
             console.log("✅ R2 stream ended successfully");
           });
 
-          fileStream.Body.on("error", (error) => {
+          fileStream.Body.on("error", (error: Error) => {
             console.error("❌ R2 stream error:", error);
           });
 
@@ -631,7 +645,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
           console.log("✅ Response finished sending");
         });
 
-        reply.raw.on("error", (error) => {
+        reply.raw.on("error", (error: Error) => {
           console.error("❌ Response stream error:", error);
           // Clean up on error
           if (fileStream.Body && fileStream.Body.destroy) {
@@ -641,7 +655,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
         // Handle R2 stream errors
         if (fileStream.Body && fileStream.Body.on) {
-          fileStream.Body.on("error", (error) => {
+          fileStream.Body.on("error", (error: Error) => {
             console.error("❌ R2 stream error:", error);
             if (!reply.raw.destroyed) {
               reply.raw.destroy();
@@ -659,7 +673,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         if (stream && stream.pipe) {
           console.log("📤 Piping R2 stream directly to client...");
           stream.pipe(reply.raw);
-          
+
           // Don't return anything - let the pipe handle it
           return;
         } else {

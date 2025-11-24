@@ -280,6 +280,9 @@ export async function creatorRoutes(fastify: FastifyInstance) {
       // Check if course exists and belongs to the creator
       const course = await db.query.courses.findFirst({
         where: eq(courses.id, courseId),
+        with: {
+          videos: true,
+        },
       });
 
       if (!course) {
@@ -290,6 +293,20 @@ export async function creatorRoutes(fastify: FastifyInstance) {
         return reply
           .status(403)
           .send({ message: "You can only delete your own courses" });
+      }
+
+      // Delete all video files from R2 before deleting the course
+      const { deleteFileFromR2 } = await import("../../services/cloudflare-r2");
+      
+      for (const video of course.videos) {
+        // Delete video file from R2
+        if (video.r2Key) {
+          await deleteFileFromR2(video.r2Key);
+        }
+        // Delete transcript file from R2 if exists
+        if (video.transcriptR2Key) {
+          await deleteFileFromR2(video.transcriptR2Key);
+        }
       }
 
       // Delete the course (videos will be deleted by CASCADE)
