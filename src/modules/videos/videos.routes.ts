@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../../db";
-import { videos, courses, enrollments } from "../../db/schema";
+import { videos, courses, enrollments, transcripts } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
@@ -13,6 +13,8 @@ import {
   getR2FileStream,
   deleteFileFromR2,
 } from "../../services/cloudflare-r2";
+import { transcribeVideoFromR2 } from "../../services/openai-transcription";
+import { generateAIResponse } from "../../services/openai-chat";
 
 // Type declarations for Fastify multipart plugin
 declare module "fastify" {
@@ -43,7 +45,12 @@ const updateVideoSchema = z.object({
 });
 
 const transcribeSchema = z.object({
-  videoUrl: z.string().url(),
+  videoId: z.string().uuid(),
+});
+
+const chatSchema = z.object({
+  videoId: z.string().uuid(),
+  question: z.string().min(1, "Pergunta é obrigatória"),
 });
 
 export async function videoRoutes(fastify: FastifyInstance) {
@@ -133,27 +140,228 @@ export async function videoRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
     handler: async (request, reply) => {
       try {
-        const { videoUrl } = transcribeSchema.parse(request.body);
+        const { videoId } = transcribeSchema.parse(request.body);
+        const userId = request.user.id;
 
         if (!process.env.OPENAI_API_KEY) {
           return reply.status(500).send({ error: "OpenAI not configured" });
         }
 
-        // Note: This is a simplified version. In production, you'd:
-        // 1. Download the video from Cloudflare R2
-        // 2. Extract audio from video file
-        // 3. Send audio to OpenAI Whisper API
-        // 4. Store transcript back to Cloudflare R2
+        // 1. Get video from database
+        const video = await db.query.videos.findFirst({
+          where: eq(videos.id, videoId),
+          with: {
+            course: true,
+          },
+        });
+
+        if (!video) {
+          return reply.status(404).send({ error: "Video not found" });
+        }
+
+        // 2. Check if user has access (creator or enrolled student)
+        const isCreator = video.course.creatorId === userId;
+        const isEnrolled = await db.query.enrollments.findFirst({
+          where: and(
+            eq(enrollments.studentId, userId),
+            eq(enrollments.courseId, video.courseId)
+          ),
+        });
+
+        if (!isCreator && !isEnrolled) {
+          return reply.status(403).send({
+            error: "You don't have access to this video",
+          });
+        }
+
+        // 3. Check if transcript already exists
+        const existingTranscript = await db.query.transcripts.findFirst({
+          where: eq(transcripts.videoId, videoId),
+        });
+
+        if (existingTranscript) {
+          return {
+            message: "Transcript already exists",
+            transcript: existingTranscript.content,
+            videoId,
+          };
+        }
+
+        // 4. Transcribe video using OpenAI Whisper
+        console.log("🎤 Starting transcription for video:", videoId);
+        const { transcript, error } = await transcribeVideoFromR2(video.r2Key);
+
+        if (error || !transcript) {
+          return reply.status(500).send({
+            error: error || "Failed to transcribe video",
+          });
+        }
+
         // 5. Save transcript to database
-        // 6. Return transcript content
+        const [savedTranscript] = await db
+          .insert(transcripts)
+          .values({
+            videoId: videoId,
+            content: transcript,
+          })
+          .returning();
+
+        // 6. Update video with transcript R2 key (optional, for backup)
+        const transcriptKey = `transcripts/${video.r2Key.replace(
+          /\.(mp4|webm|mov)$/,
+          ".txt"
+        )}`;
+        await db
+          .update(videos)
+          .set({ transcriptR2Key: transcriptKey })
+          .where(eq(videos.id, videoId));
 
         return {
-          message: "Transcription endpoint - implementation pending",
-          videoUrl,
+          message: "Video transcribed successfully",
+          transcript: savedTranscript.content,
+          videoId,
         };
-      } catch (error) {
+      } catch (error: any) {
         console.error("Transcription failed:", error);
-        return reply.status(500).send({ error: "Failed to transcribe video" });
+        return reply.status(500).send({
+          error: error.message || "Failed to transcribe video",
+        });
+      }
+    },
+  });
+
+  // Get transcript for a video
+  fastify.get("/videos/:videoId/transcript", {
+    preHandler: [fastify.authenticate],
+    handler: async (request, reply) => {
+      try {
+        const { videoId } = request.params as { videoId: string };
+        const userId = request.user.id;
+
+        // 1. Get video and check access
+        const video = await db.query.videos.findFirst({
+          where: eq(videos.id, videoId),
+          with: {
+            course: true,
+          },
+        });
+
+        if (!video) {
+          return reply.status(404).send({ error: "Video not found" });
+        }
+
+        const isCreator = video.course.creatorId === userId;
+        const isEnrolled = await db.query.enrollments.findFirst({
+          where: and(
+            eq(enrollments.studentId, userId),
+            eq(enrollments.courseId, video.courseId)
+          ),
+        });
+
+        if (!isCreator && !isEnrolled) {
+          return reply.status(403).send({
+            error: "You don't have access to this video",
+          });
+        }
+
+        // 2. Get transcript from database
+        const transcript = await db.query.transcripts.findFirst({
+          where: eq(transcripts.videoId, videoId),
+        });
+
+        if (!transcript) {
+          return reply.status(404).send({
+            error: "Transcript not found. Please transcribe the video first.",
+          });
+        }
+
+        return {
+          transcript: transcript.content,
+          videoId,
+          createdAt: transcript.createdAt,
+        };
+      } catch (error: any) {
+        console.error("Error fetching transcript:", error);
+        return reply.status(500).send({
+          error: error.message || "Failed to fetch transcript",
+        });
+      }
+    },
+  });
+
+  // AI Chat endpoint - answer questions based on video transcript
+  fastify.post("/videos/chat", {
+    preHandler: [fastify.authenticate],
+    handler: async (request, reply) => {
+      try {
+        const { videoId, question } = chatSchema.parse(request.body);
+        const userId = request.user.id;
+
+        if (!process.env.OPENAI_API_KEY) {
+          return reply.status(500).send({ error: "OpenAI not configured" });
+        }
+
+        // 1. Get video and check access
+        const video = await db.query.videos.findFirst({
+          where: eq(videos.id, videoId),
+          with: {
+            course: true,
+          },
+        });
+
+        if (!video) {
+          return reply.status(404).send({ error: "Video not found" });
+        }
+
+        const isCreator = video.course.creatorId === userId;
+        const isEnrolled = await db.query.enrollments.findFirst({
+          where: and(
+            eq(enrollments.studentId, userId),
+            eq(enrollments.courseId, video.courseId)
+          ),
+        });
+
+        if (!isCreator && !isEnrolled) {
+          return reply.status(403).send({
+            error: "You don't have access to this video",
+          });
+        }
+
+        // 2. Get transcript
+        const transcript = await db.query.transcripts.findFirst({
+          where: eq(transcripts.videoId, videoId),
+        });
+
+        if (!transcript) {
+          return reply.status(404).send({
+            error: "Transcript not found. Please transcribe the video first.",
+          });
+        }
+
+        // 3. Generate AI response
+        console.log("🤖 Generating AI response for video:", videoId);
+        const { response, error } = await generateAIResponse(
+          transcript.content,
+          question,
+          video.title
+        );
+
+        if (error || !response) {
+          return reply.status(500).send({
+            error: error || "Failed to generate AI response",
+          });
+        }
+
+        return {
+          response,
+          videoId,
+          question,
+        };
+      } catch (error: any) {
+        console.error("AI chat error:", error);
+        return reply.status(500).send({
+          error: error.message || "Failed to process chat request",
+        });
       }
     },
   });

@@ -232,7 +232,10 @@ export async function deleteFileFromR2(key: string): Promise<boolean> {
   } catch (error: any) {
     // Don't throw error if file doesn't exist (404)
     if (error.Code === "NoSuchKey" || error.$metadata?.httpStatusCode === 404) {
-      console.log("ℹ️ File not found in R2 (already deleted or never existed):", key);
+      console.log(
+        "ℹ️ File not found in R2 (already deleted or never existed):",
+        key
+      );
       return true; // Consider it successful since the goal is to have it deleted
     }
 
@@ -243,6 +246,58 @@ export async function deleteFileFromR2(key: string): Promise<boolean> {
       statusCode: error.$metadata?.httpStatusCode,
     });
     return false;
+  }
+}
+
+/**
+ * Download file from R2 as Buffer
+ */
+export async function downloadFileFromR2(key: string): Promise<Buffer | null> {
+  try {
+    console.log("📥 Downloading file from R2:", {
+      key,
+      bucket: process.env.CLOUDFLARE_BUCKET_NAME,
+    });
+
+    const s3Client = getR2Client();
+
+    const command = new GetObjectCommand({
+      Bucket: process.env.CLOUDFLARE_BUCKET_NAME!,
+      Key: key,
+    });
+
+    const response = await s3Client.send(command);
+
+    if (!response.Body) {
+      console.error("❌ No body in R2 response:", key);
+      return null;
+    }
+
+    // Convert stream to buffer
+    const chunks: Uint8Array[] = [];
+    const stream = response.Body as any;
+
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+
+    const buffer = Buffer.concat(chunks);
+
+    console.log("✅ File downloaded from R2:", {
+      key,
+      size: buffer.length,
+      contentType: response.ContentType,
+    });
+
+    return buffer;
+  } catch (error: any) {
+    console.error("❌ Failed to download file from R2:", {
+      key,
+      error: error.message,
+      code: error.Code,
+      statusCode: error.$metadata?.httpStatusCode,
+    });
+    return null;
   }
 }
 
