@@ -192,6 +192,16 @@ export async function videoRoutes(fastify: FastifyInstance) {
         const { transcript, error } = await transcribeVideoFromR2(video.r2Key);
 
         if (error || !transcript) {
+          // Check if it's a file size error (413)
+          if (error && error.includes("25MB")) {
+            return reply.status(413).send({
+              error: error,
+              code: "FILE_TOO_LARGE",
+              suggestion:
+                "Please compress the video or use a shorter video. OpenAI Whisper API has a 25MB file size limit.",
+            });
+          }
+
           return reply.status(500).send({
             error: error || "Failed to transcribe video",
           });
