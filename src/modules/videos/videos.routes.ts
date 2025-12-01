@@ -210,15 +210,21 @@ export async function videoRoutes(fastify: FastifyInstance) {
         });
 
         // Process transcription in background (don't block the response)
-        setImmediate(async () => {
+        // Use process.nextTick to ensure it runs after the response is sent
+        process.nextTick(async () => {
           try {
             console.log("🔄 Background transcription started for:", videoId);
+            console.log("🔄 Video R2 Key:", video.r2Key);
+
+            // Wrap in try-catch to prevent server crash
             const { transcript, error } = await transcribeVideoFromR2(
               video.r2Key
             );
 
             if (error || !transcript) {
               console.error("❌ Background transcription failed:", error);
+              console.error("❌ Video ID:", videoId);
+              console.error("❌ R2 Key:", video.r2Key);
               // Optionally, you could store the error in the database or send a notification
               return;
             }
