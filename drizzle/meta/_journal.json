@@ -15,6 +15,13 @@
       "when": 1763917729496,
       "tag": "0001_brave_jubilee",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1764626238941,
+      "tag": "0002_ambitious_blazing_skull",
+      "breakpoints": true
     }
   ]
 }

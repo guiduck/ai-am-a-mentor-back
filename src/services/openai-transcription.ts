@@ -143,6 +143,7 @@ export async function transcribeVideoFromR2(
     const client = getOpenAIClient();
     console.log("📤 OpenAI client created, creating transcription request...");
 
+    console.log("📤 Sending to OpenAI Whisper API...");
     const transcription = await client.audio.transcriptions.create({
       file: audioFile,
       model: "whisper-1",
@@ -156,7 +157,9 @@ export async function transcribeVideoFromR2(
         ? transcription
         : (transcription as any).text || "";
 
-    console.log("✅ Transcription completed, length:", transcriptText.length);
+    console.log("✅ Transcription completed from OpenAI");
+    console.log("✅ Transcript length:", transcriptText.length);
+    console.log("✅ Transcript preview:", transcriptText.substring(0, 200));
 
     // 5. Store transcript in R2 (optional, for backup)
     const transcriptKey = `transcripts/${r2Key.replace(

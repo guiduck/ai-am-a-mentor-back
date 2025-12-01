@@ -1,7 +1,13 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../../db";
-import { videos, courses, enrollments, transcripts } from "../../db/schema";
+import {
+  videos,
+  courses,
+  enrollments,
+  transcripts,
+  comments,
+} from "../../db/schema";
 import { eq, and } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
@@ -42,6 +48,12 @@ const createVideoSchema = z.object({
 const updateVideoSchema = z.object({
   title: z.string().min(1).max(255).optional(),
   duration: z.number().int().positive().optional(),
+  r2Key: z.string().optional(),
+});
+
+const createCommentSchema = z.object({
+  videoId: z.string().uuid(),
+  content: z.string().min(1, "Comentário não pode estar vazio"),
 });
 
 const transcribeSchema = z.object({
@@ -217,9 +229,15 @@ export async function videoRoutes(fastify: FastifyInstance) {
             console.log("🔄 Video R2 Key:", video.r2Key);
 
             // Wrap in try-catch to prevent server crash
+            console.log("🔄 Calling transcribeVideoFromR2...");
             const { transcript, error } = await transcribeVideoFromR2(
               video.r2Key
             );
+
+            console.log("🔄 Transcription result received");
+            console.log("🔄 Has transcript:", !!transcript);
+            console.log("🔄 Has error:", !!error);
+            console.log("🔄 Transcript length:", transcript?.length || 0);
 
             if (error || !transcript) {
               console.error("❌ Background transcription failed:", error);
@@ -233,6 +251,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
             console.log("💾 Saving transcript to database...");
             console.log("💾 Transcript length:", transcript.length);
             console.log("💾 Video ID:", videoId);
+            console.log("💾 Transcript preview:", transcript.substring(0, 100));
 
             const [savedTranscript] = await db
               .insert(transcripts)
@@ -646,6 +665,11 @@ export async function videoRoutes(fastify: FastifyInstance) {
           });
         }
 
+        // If r2Key is being updated, delete old video file
+        if (updateData.r2Key && video.r2Key !== updateData.r2Key) {
+          await deleteFileFromR2(video.r2Key);
+        }
+
         // Update the video
         const updatedVideo = await db
           .update(videos)
@@ -979,6 +1003,122 @@ export async function videoRoutes(fastify: FastifyInstance) {
       } catch (error) {
         console.error("Error streaming video:", error);
         return reply.status(500).send({ message: "Failed to stream video" });
+      }
+    },
+  });
+
+  // Get comments for a video
+  fastify.get("/videos/:videoId/comments", {
+    preHandler: [fastify.authenticate],
+    handler: async (request, reply) => {
+      try {
+        const { videoId } = request.params as { videoId: string };
+        const userId = request.user.id;
+
+        // Get video and check access
+        const video = await db.query.videos.findFirst({
+          where: eq(videos.id, videoId),
+          with: {
+            course: true,
+          },
+        });
+
+        if (!video) {
+          return reply.status(404).send({ error: "Video not found" });
+        }
+
+        const isCreator = video.course.creatorId === userId;
+        const isEnrolled = await db.query.enrollments.findFirst({
+          where: and(
+            eq(enrollments.studentId, userId),
+            eq(enrollments.courseId, video.courseId)
+          ),
+        });
+
+        if (!isCreator && !isEnrolled) {
+          return reply.status(403).send({
+            error: "You don't have access to this video",
+          });
+        }
+
+        // Get comments with user info
+        const videoComments = await db.query.comments.findMany({
+          where: eq(comments.videoId, videoId),
+          with: {
+            user: true,
+          },
+          orderBy: (comments, { desc }) => [desc(comments.createdAt)],
+        });
+
+        return videoComments;
+      } catch (error: any) {
+        console.error("Error fetching comments:", error);
+        return reply.status(500).send({
+          error: error.message || "Failed to fetch comments",
+        });
+      }
+    },
+  });
+
+  // Create a comment on a video
+  fastify.post("/videos/:videoId/comments", {
+    preHandler: [fastify.authenticate],
+    handler: async (request, reply) => {
+      try {
+        const { videoId } = request.params as { videoId: string };
+        const { content } = createCommentSchema.parse(request.body);
+        const userId = request.user.id;
+
+        // Get video and check access
+        const video = await db.query.videos.findFirst({
+          where: eq(videos.id, videoId),
+          with: {
+            course: true,
+          },
+        });
+
+        if (!video) {
+          return reply.status(404).send({ error: "Video not found" });
+        }
+
+        const isCreator = video.course.creatorId === userId;
+        const isEnrolled = await db.query.enrollments.findFirst({
+          where: and(
+            eq(enrollments.studentId, userId),
+            eq(enrollments.courseId, video.courseId)
+          ),
+        });
+
+        if (!isCreator && !isEnrolled) {
+          return reply.status(403).send({
+            error: "You must be enrolled in this course to comment",
+          });
+        }
+
+        // Create comment
+        const [newComment] = await db
+          .insert(comments)
+          .values({
+            videoId,
+            userId,
+            content,
+          })
+          .returning();
+
+        // Get comment with user info
+        const commentWithUser = await db.query.comments.findFirst({
+          where: eq(comments.id, newComment.id),
+          with: {
+            user: true,
+          },
+        });
+
+        return reply.status(201).send(commentWithUser);
+      } catch (error: any) {
+        console.error("Error creating comment:", error);
+        return reply.status(500).send({
+          error: error.message || "Failed to create comment",
+        });
       }
     },
   });

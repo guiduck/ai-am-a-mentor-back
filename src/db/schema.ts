@@ -65,6 +65,19 @@ export const enrollments = pgTable("enrollments", {
   enrolledAt: timestamp("enrolled_at").defaultNow(),
 });
 
+export const comments = pgTable("comments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  videoId: uuid("video_id")
+    .notNull()
+    .references(() => videos.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   createdCourses: many(courses),
@@ -86,6 +99,7 @@ export const videosRelations = relations(videos, ({ one, many }) => ({
     references: [courses.id],
   }),
   transcripts: many(transcripts),
+  comments: many(comments),
 }));
 
 export const transcriptsRelations = relations(transcripts, ({ one }) => ({
@@ -103,5 +117,16 @@ export const enrollmentsRelations = relations(enrollments, ({ one }) => ({
   course: one(courses, {
     fields: [enrollments.courseId],
     references: [courses.id],
+  }),
+}));
+
+export const commentsRelations = relations(comments, ({ one }) => ({
+  video: one(videos, {
+    fields: [comments.videoId],
+    references: [videos.id],
+  }),
+  user: one(users, {
+    fields: [comments.userId],
+    references: [users.id],
   }),
 }));
