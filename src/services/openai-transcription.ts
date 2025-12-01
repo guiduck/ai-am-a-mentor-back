@@ -10,8 +10,8 @@
  */
 
 import OpenAI from "openai";
-import { downloadFileFromR2, uploadFileToR2 } from "./cloudflare-r2";
-import { extractAudioFromVideo, isFFmpegAvailable } from "./audio-extractor";
+import { getR2FileStream, uploadFileToR2 } from "./cloudflare-r2";
+import { extractAudioFromVideoStream, isFFmpegAvailable } from "./audio-extractor";
 
 let openaiClient: OpenAI | null = null;
 
@@ -46,22 +46,25 @@ export async function transcribeVideoFromR2(
     console.log("🎤 R2 Key:", r2Key);
     console.log("🎤 OpenAI API Key configured:", !!process.env.OPENAI_API_KEY);
 
-    // 1. Download video from R2
-    console.log("📥 Step 1: Downloading video from R2...");
-    const videoBuffer = await downloadFileFromR2(r2Key);
-    if (!videoBuffer) {
+    // 1. Get video stream from R2 (memory-efficient, doesn't load entire file)
+    console.log("📥 Step 1: Getting video stream from R2...");
+    const videoStream = await getR2FileStream(r2Key);
+    if (!videoStream || !videoStream.Body) {
       return {
         transcript: "",
-        error: "Failed to download video from R2",
+        error: "Failed to get video stream from R2",
       };
     }
 
-    const fileSizeMB = (videoBuffer.length / 1024 / 1024).toFixed(2);
-    console.log("✅ Video downloaded, size:", fileSizeMB, "MB");
+    const fileSizeMB = videoStream.ContentLength
+      ? (videoStream.ContentLength / 1024 / 1024).toFixed(2)
+      : "unknown";
+    console.log("✅ Video stream obtained, size:", fileSizeMB, "MB");
 
     // 2. Always extract audio for optimal size reduction
     // This allows us to transcribe videos of any length (1+ hours)
     // Audio is typically 90% smaller than video
+    // Process directly from stream to avoid loading entire video in memory
     console.log("🎵 Starting audio extraction process...");
 
     // Check if ffmpeg is available
@@ -79,14 +82,14 @@ export async function transcribeVideoFromR2(
 
     console.log("🎵 FFmpeg is available, proceeding with audio extraction...");
 
-    // Extract audio from video (always, regardless of size)
+    // Extract audio from video stream (memory-efficient)
     const extension = r2Key.split(".").pop() || "mp4";
     console.log(
-      `🎵 Extracting audio from ${extension} video (${fileSizeMB}MB)...`
+      `🎵 Extracting audio from ${extension} video stream (${fileSizeMB}MB)...`
     );
 
     const { audioBuffer: extractedAudio, error: extractError } =
-      await extractAudioFromVideo(videoBuffer, extension);
+      await extractAudioFromVideoStream(videoStream.Body, extension);
 
     if (extractError) {
       console.error("❌ Audio extraction error:", extractError);
