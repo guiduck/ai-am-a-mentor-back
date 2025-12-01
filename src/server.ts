@@ -4,15 +4,18 @@ import authPlugin from "./plugins/auth";
 
 const fastify = Fastify({
   logger: true,
+  bodyLimit: 50 * 1024 * 1024, // 50MB - enough for JSON requests, videos are uploaded directly to R2
 });
 
 // Register multipart support for file uploads with increased limits
+// Note: For large video uploads, we recommend using direct R2 upload (presigned URLs)
+// This limit is kept for backward compatibility with the old upload method
 fastify.register(require("@fastify/multipart"), {
   limits: {
     fieldNameSize: 100, // Max field name size in bytes
     fieldSize: 100, // Max field value size in bytes
     fields: 10, // Max number of non-file fields
-    fileSize: 500 * 1024 * 1024, // Max file size: 500MB
+    fileSize: 2 * 1024 * 1024 * 1024, // Max file size: 2GB (browser limit)
     files: 1, // Max number of file fields
     headerPairs: 2000, // Max number of header key=>value pairs
   },
@@ -57,6 +60,43 @@ fastify.register(require("@fastify/cors"), {
     }
   },
   credentials: true,
+});
+
+// Global error handler for better logging
+fastify.setErrorHandler((error, request, reply) => {
+  console.error("❌ Global error handler triggered:");
+  console.error("❌ Error name:", error.name);
+  console.error("❌ Error message:", error.message);
+  console.error("❌ Error code:", error.code);
+  console.error("❌ Error statusCode:", error.statusCode);
+  console.error("❌ Request URL:", request.url);
+  console.error("❌ Request method:", request.method);
+  console.error("❌ Request headers:", {
+    "content-type": request.headers["content-type"],
+    "content-length": request.headers["content-length"],
+  });
+
+  // Handle body size errors specifically
+  if (
+    error.code === "FST_ERR_CTP_BODY_TOO_LARGE" ||
+    error.message?.includes("413") ||
+    error.message?.includes("Maximum content size")
+  ) {
+    console.error("❌ Body size limit exceeded!");
+    return reply.status(413).send({
+      error:
+        "Request body too large. The transcription endpoint only accepts a videoId in JSON format. Videos are stored in R2 and downloaded server-side.",
+      code: "BODY_TOO_LARGE",
+      suggestion:
+        "Ensure you're only sending { videoId: 'uuid' } in the request body.",
+    });
+  }
+
+  // Default error response
+  reply.status(error.statusCode || 500).send({
+    error: error.message || "Internal server error",
+    code: error.code,
+  });
 });
 
 fastify.register(authPlugin);

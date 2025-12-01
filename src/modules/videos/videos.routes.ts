@@ -140,8 +140,18 @@ export async function videoRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
     handler: async (request, reply) => {
       try {
+        console.log("📥 Transcription request received");
+        console.log("📥 Request body:", request.body);
+        console.log("📥 Request headers:", {
+          "content-type": request.headers["content-type"],
+          "content-length": request.headers["content-length"],
+        });
+
         const { videoId } = transcribeSchema.parse(request.body);
         const userId = request.user.id;
+
+        console.log("📥 Parsed videoId:", videoId);
+        console.log("📥 User ID:", userId);
 
         if (!process.env.OPENAI_API_KEY) {
           return reply.status(500).send({ error: "OpenAI not configured" });
@@ -232,7 +242,27 @@ export async function videoRoutes(fastify: FastifyInstance) {
           videoId,
         };
       } catch (error: any) {
-        console.error("Transcription failed:", error);
+        console.error("❌ Transcription endpoint error:", error);
+        console.error("❌ Error name:", error.name);
+        console.error("❌ Error message:", error.message);
+        console.error("❌ Error stack:", error.stack);
+        console.error("❌ Error code:", error.code);
+        console.error("❌ Error status:", error.status);
+        console.error("❌ Error statusCode:", error.statusCode);
+
+        // If it's a body size error, provide helpful message
+        if (
+          error.message?.includes("413") ||
+          error.message?.includes("Maximum content size") ||
+          error.code === "FST_ERR_CTP_BODY_TOO_LARGE"
+        ) {
+          return reply.status(413).send({
+            error:
+              "Request body too large. The transcription endpoint only accepts a videoId in JSON format. If you're trying to upload a video, use the direct R2 upload endpoint instead.",
+            code: "BODY_TOO_LARGE",
+          });
+        }
+
         return reply.status(500).send({
           error: error.message || "Failed to transcribe video",
         });

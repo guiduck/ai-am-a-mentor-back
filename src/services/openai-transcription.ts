@@ -43,8 +43,11 @@ export async function transcribeVideoFromR2(
 ): Promise<{ transcript: string; error?: string }> {
   try {
     console.log("🎤 Starting transcription for:", r2Key);
+    console.log("🎤 R2 Key:", r2Key);
+    console.log("🎤 OpenAI API Key configured:", !!process.env.OPENAI_API_KEY);
 
     // 1. Download video from R2
+    console.log("📥 Step 1: Downloading video from R2...");
     const videoBuffer = await downloadFileFromR2(r2Key);
     if (!videoBuffer) {
       return {
@@ -59,26 +62,46 @@ export async function transcribeVideoFromR2(
     // 2. Always extract audio for optimal size reduction
     // This allows us to transcribe videos of any length (1+ hours)
     // Audio is typically 90% smaller than video
-    console.log("🎵 Extracting audio from video...");
+    console.log("🎵 Starting audio extraction process...");
 
     // Check if ffmpeg is available
+    console.log("🔍 Checking FFmpeg availability...");
     const ffmpegAvailable = await isFFmpegAvailable();
+    console.log("🔍 FFmpeg available:", ffmpegAvailable);
+
     if (!ffmpegAvailable) {
+      console.error("❌ FFmpeg is not available - cannot extract audio");
       return {
         transcript: "",
-        error: `FFmpeg is not available. Please install FFmpeg to enable video transcription. Audio extraction is required for videos of any size.`,
+        error: `FFmpeg is not available. Please install FFmpeg to enable video transcription. Audio extraction is required for videos of any size. Run: apt-get update && apt-get install -y ffmpeg`,
       };
     }
 
+    console.log("🎵 FFmpeg is available, proceeding with audio extraction...");
+
     // Extract audio from video (always, regardless of size)
     const extension = r2Key.split(".").pop() || "mp4";
+    console.log(
+      `🎵 Extracting audio from ${extension} video (${fileSizeMB}MB)...`
+    );
+
     const { audioBuffer: extractedAudio, error: extractError } =
       await extractAudioFromVideo(videoBuffer, extension);
 
-    if (extractError || !extractedAudio || extractedAudio.length === 0) {
+    if (extractError) {
+      console.error("❌ Audio extraction error:", extractError);
       return {
         transcript: "",
         error: extractError || "Failed to extract audio from video",
+      };
+    }
+
+    if (!extractedAudio || extractedAudio.length === 0) {
+      console.error("❌ Audio extraction returned empty buffer");
+      return {
+        transcript: "",
+        error:
+          "Audio extraction returned empty buffer. The video may not contain audio track.",
       };
     }
 
@@ -110,8 +133,12 @@ export async function transcribeVideoFromR2(
     });
 
     // 4. Send to OpenAI Whisper API
+    console.log("📤 Step 4: Sending audio to OpenAI Whisper API...");
+    console.log("📤 Audio file size:", audioSizeMB, "MB");
+    console.log("📤 Audio file name:", fileName);
+
     const client = getOpenAIClient();
-    console.log("📤 Sending audio to OpenAI Whisper API...");
+    console.log("📤 OpenAI client created, creating transcription request...");
 
     const transcription = await client.audio.transcriptions.create({
       file: audioFile,
@@ -143,6 +170,22 @@ export async function transcribeVideoFromR2(
     };
   } catch (error: any) {
     console.error("❌ Transcription error:", error);
+    console.error("❌ Error stack:", error.stack);
+    console.error("❌ Error details:", {
+      message: error.message,
+      status: error.status,
+      code: error.code,
+    });
+
+    // If it's a 413 error, it means we're still sending the video directly
+    // This should not happen if audio extraction is working
+    if (error.status === 413 || error.message?.includes("413")) {
+      return {
+        transcript: "",
+        error: `File size limit exceeded. Audio extraction may have failed. Please ensure FFmpeg is installed and try again. Original error: ${error.message}`,
+      };
+    }
+
     return {
       transcript: "",
       error: error.message || "Failed to transcribe video",

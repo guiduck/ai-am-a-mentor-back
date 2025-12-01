@@ -123,12 +123,17 @@ export async function extractAudioFromVideo(
  */
 export async function isFFmpegAvailable(): Promise<boolean> {
   return new Promise((resolve) => {
+    // Try to get ffmpeg version to check if it's installed
     ffmpeg.getAvailableEncoders((err, encoders) => {
       if (err) {
         console.warn("⚠️ FFmpeg not available:", err.message);
+        console.warn("⚠️ Error details:", {
+          message: err.message,
+          stack: err.stack,
+        });
         resolve(false);
       } else {
-        console.log("✅ FFmpeg is available");
+        console.log("✅ FFmpeg is available, encoders found:", Object.keys(encoders || {}).length);
         resolve(true);
       }
     });
