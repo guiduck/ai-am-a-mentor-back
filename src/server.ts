@@ -5,6 +5,8 @@ import authPlugin from "./plugins/auth";
 const fastify = Fastify({
   logger: true,
   bodyLimit: 50 * 1024 * 1024, // 50MB - enough for JSON requests, videos are uploaded directly to R2
+  requestTimeout: 300000, // 5 minutes - transcription can take a while
+  connectionTimeout: 300000, // 5 minutes
 });
 
 // Register multipart support for file uploads with increased limits
@@ -60,6 +62,9 @@ fastify.register(require("@fastify/cors"), {
     }
   },
   credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  exposedHeaders: ["Content-Type", "Authorization"],
 });
 
 // Global error handler for better logging

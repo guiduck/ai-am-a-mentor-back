@@ -198,10 +198,19 @@ export async function videoRoutes(fastify: FastifyInstance) {
         }
 
         // 4. Transcribe video using OpenAI Whisper
+        // IMPORTANT: This is a long-running operation. We process it in the background
+        // to avoid timeout issues on Render and other hosting platforms.
         console.log("🎤 Starting transcription for video:", videoId);
-        const { transcript, error } = await transcribeVideoFromR2(video.r2Key);
+
+        // Start transcription in background (don't await immediately)
+        const transcriptionPromise = transcribeVideoFromR2(video.r2Key);
+
+        // Process transcription
+        const { transcript, error } = await transcriptionPromise;
 
         if (error || !transcript) {
+          console.error("❌ Transcription failed:", error);
+
           // Check if it's a file size error (413)
           if (error && error.includes("25MB")) {
             return reply.status(413).send({
@@ -218,6 +227,10 @@ export async function videoRoutes(fastify: FastifyInstance) {
         }
 
         // 5. Save transcript to database
+        console.log("💾 Saving transcript to database...");
+        console.log("💾 Transcript length:", transcript.length);
+        console.log("💾 Video ID:", videoId);
+
         const [savedTranscript] = await db
           .insert(transcripts)
           .values({
@@ -225,6 +238,12 @@ export async function videoRoutes(fastify: FastifyInstance) {
             content: transcript,
           })
           .returning();
+
+        console.log("✅ Transcript saved to database:", {
+          id: savedTranscript.id,
+          videoId: savedTranscript.videoId,
+          contentLength: savedTranscript.content.length,
+        });
 
         // 6. Update video with transcript R2 key (optional, for backup)
         const transcriptKey = `transcripts/${video.r2Key.replace(
@@ -235,6 +254,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
           .update(videos)
           .set({ transcriptR2Key: transcriptKey })
           .where(eq(videos.id, videoId));
+
+        console.log("✅ Video updated with transcript R2 key:", transcriptKey);
 
         return {
           message: "Video transcribed successfully",
@@ -368,11 +389,22 @@ export async function videoRoutes(fastify: FastifyInstance) {
         }
 
         // 2. Get transcript
+        console.log("📚 Fetching transcript for video:", videoId);
         const transcript = await db.query.transcripts.findFirst({
           where: eq(transcripts.videoId, videoId),
         });
 
+        console.log("📚 Transcript found:", !!transcript);
+        if (transcript) {
+          console.log("📚 Transcript length:", transcript.content.length);
+          console.log(
+            "📚 Transcript preview:",
+            transcript.content.substring(0, 100)
+          );
+        }
+
         if (!transcript) {
+          console.error("❌ Transcript not found for video:", videoId);
           return reply.status(404).send({
             error: "Transcript not found. Please transcribe the video first.",
           });
@@ -380,6 +412,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
         // 3. Generate AI response
         console.log("🤖 Generating AI response for video:", videoId);
+        console.log("🤖 Question:", question);
+        console.log("🤖 Video title:", video.title);
         const { response, error } = await generateAIResponse(
           transcript.content,
           question,
