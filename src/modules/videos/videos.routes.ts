@@ -198,70 +198,76 @@ export async function videoRoutes(fastify: FastifyInstance) {
         }
 
         // 4. Transcribe video using OpenAI Whisper
-        // IMPORTANT: This is a long-running operation. We process it in the background
-        // to avoid timeout issues on Render and other hosting platforms.
+        // IMPORTANT: This is a long-running operation that can take minutes.
+        // We process it in the background to avoid Render's 30s timeout.
         console.log("🎤 Starting transcription for video:", videoId);
 
-        // Start transcription in background (don't await immediately)
-        const transcriptionPromise = transcribeVideoFromR2(video.r2Key);
-
-        // Process transcription
-        const { transcript, error } = await transcriptionPromise;
-
-        if (error || !transcript) {
-          console.error("❌ Transcription failed:", error);
-
-          // Check if it's a file size error (413)
-          if (error && error.includes("25MB")) {
-            return reply.status(413).send({
-              error: error,
-              code: "FILE_TOO_LARGE",
-              suggestion:
-                "Please compress the video or use a shorter video. OpenAI Whisper API has a 25MB file size limit.",
-            });
-          }
-
-          return reply.status(500).send({
-            error: error || "Failed to transcribe video",
-          });
-        }
-
-        // 5. Save transcript to database
-        console.log("💾 Saving transcript to database...");
-        console.log("💾 Transcript length:", transcript.length);
-        console.log("💾 Video ID:", videoId);
-
-        const [savedTranscript] = await db
-          .insert(transcripts)
-          .values({
-            videoId: videoId,
-            content: transcript,
-          })
-          .returning();
-
-        console.log("✅ Transcript saved to database:", {
-          id: savedTranscript.id,
-          videoId: savedTranscript.videoId,
-          contentLength: savedTranscript.content.length,
+        // Return immediately and process in background
+        reply.status(202).send({
+          message: "Transcription started. This may take a few minutes.",
+          videoId,
+          status: "processing",
         });
 
-        // 6. Update video with transcript R2 key (optional, for backup)
-        const transcriptKey = `transcripts/${video.r2Key.replace(
-          /\.(mp4|webm|mov)$/,
-          ".txt"
-        )}`;
-        await db
-          .update(videos)
-          .set({ transcriptR2Key: transcriptKey })
-          .where(eq(videos.id, videoId));
+        // Process transcription in background (don't block the response)
+        setImmediate(async () => {
+          try {
+            console.log("🔄 Background transcription started for:", videoId);
+            const { transcript, error } = await transcribeVideoFromR2(
+              video.r2Key
+            );
 
-        console.log("✅ Video updated with transcript R2 key:", transcriptKey);
+            if (error || !transcript) {
+              console.error("❌ Background transcription failed:", error);
+              // Optionally, you could store the error in the database or send a notification
+              return;
+            }
 
-        return {
-          message: "Video transcribed successfully",
-          transcript: savedTranscript.content,
-          videoId,
-        };
+            // Save transcript to database
+            console.log("💾 Saving transcript to database...");
+            console.log("💾 Transcript length:", transcript.length);
+            console.log("💾 Video ID:", videoId);
+
+            const [savedTranscript] = await db
+              .insert(transcripts)
+              .values({
+                videoId: videoId,
+                content: transcript,
+              })
+              .returning();
+
+            console.log("✅ Transcript saved to database:", {
+              id: savedTranscript.id,
+              videoId: savedTranscript.videoId,
+              contentLength: savedTranscript.content.length,
+            });
+
+            // Update video with transcript R2 key (optional, for backup)
+            const transcriptKey = `transcripts/${video.r2Key.replace(
+              /\.(mp4|webm|mov)$/,
+              ".txt"
+            )}`;
+            await db
+              .update(videos)
+              .set({ transcriptR2Key: transcriptKey })
+              .where(eq(videos.id, videoId));
+
+            console.log(
+              "✅ Video updated with transcript R2 key:",
+              transcriptKey
+            );
+            console.log(
+              "✅ Background transcription completed successfully for:",
+              videoId
+            );
+          } catch (error: any) {
+            console.error("❌ Background transcription error:", error);
+            console.error("❌ Error stack:", error.stack);
+          }
+        });
+
+        // Response already sent, don't return anything
+        return;
       } catch (error: any) {
         console.error("❌ Transcription endpoint error:", error);
         console.error("❌ Error name:", error.name);
@@ -339,7 +345,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
         return {
           transcript: transcript.content,
           videoId,
-          createdAt: transcript.createdAt,
+          createdAt:
+            transcript.createdAt?.toISOString() || new Date().toISOString(),
         };
       } catch (error: any) {
         console.error("Error fetching transcript:", error);
