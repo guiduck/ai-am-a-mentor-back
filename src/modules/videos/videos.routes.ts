@@ -52,7 +52,6 @@ const updateVideoSchema = z.object({
 });
 
 const createCommentSchema = z.object({
-  videoId: z.string().uuid(),
   content: z.string().min(1, "Comentário não pode estar vazio"),
 });
 
@@ -1045,7 +1044,13 @@ export async function videoRoutes(fastify: FastifyInstance) {
         const videoComments = await db.query.comments.findMany({
           where: eq(comments.videoId, videoId),
           with: {
-            user: true,
+            user: {
+              columns: {
+                id: true,
+                username: true,
+                email: true,
+              },
+            },
           },
           orderBy: (comments, { desc }) => [desc(comments.createdAt)],
         });
@@ -1109,9 +1114,21 @@ export async function videoRoutes(fastify: FastifyInstance) {
         const commentWithUser = await db.query.comments.findFirst({
           where: eq(comments.id, newComment.id),
           with: {
-            user: true,
+            user: {
+              columns: {
+                id: true,
+                username: true,
+                email: true,
+              },
+            },
           },
         });
+
+        if (!commentWithUser) {
+          return reply.status(500).send({
+            error: "Failed to retrieve created comment",
+          });
+        }
 
         return reply.status(201).send(commentWithUser);
       } catch (error: any) {
