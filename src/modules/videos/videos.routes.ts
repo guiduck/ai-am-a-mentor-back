@@ -21,6 +21,8 @@ import {
 } from "../../services/cloudflare-r2";
 import { transcribeVideoFromR2 } from "../../services/openai-transcription";
 import { generateAIResponse } from "../../services/openai-chat";
+import { calculateVideoUploadCost } from "../../services/video-cost";
+import { getUserCredits, deductCredits } from "../../services/credits";
 
 // Type declarations for Fastify multipart plugin
 declare module "fastify" {
@@ -507,6 +509,23 @@ export async function videoRoutes(fastify: FastifyInstance) {
             .send({ message: "Course has reached maximum of 500 videos" });
         }
 
+        // Calculate credit cost if duration is provided
+        let creditCost = 0;
+        if (duration && duration > 0) {
+          creditCost = calculateVideoUploadCost(duration);
+
+          // Check if creator has enough credits
+          const balance = await getUserCredits(creatorId);
+          if (balance < creditCost) {
+            return reply.status(402).send({
+              error: "Insufficient credits",
+              required: creditCost,
+              current: balance,
+              message: `You need ${creditCost} credits to upload this video (${Math.ceil(duration / 60)} minutes). Your current balance is ${balance} credits.`,
+            });
+          }
+        }
+
         // Create the video
         const newVideo = await db
           .insert(videos)
@@ -517,6 +536,33 @@ export async function videoRoutes(fastify: FastifyInstance) {
             duration,
           })
           .returning();
+
+        // Deduct credits if cost > 0
+        if (creditCost > 0) {
+          const deductResult = await deductCredits(
+            creatorId,
+            creditCost,
+            `Upload video: ${title} (${Math.ceil(duration! / 60)} minutes)`,
+            newVideo[0].id,
+            "video"
+          );
+
+          if (!deductResult.success) {
+            // Rollback: delete the video
+            await db.delete(videos).where(eq(videos.id, newVideo[0].id));
+            return reply.status(500).send({
+              error: "Failed to deduct credits",
+              message: deductResult.error || "An error occurred while processing credits",
+            });
+          }
+
+          return reply.status(201).send({
+            message: "Video created successfully",
+            video: newVideo[0],
+            creditsUsed: creditCost,
+            newBalance: deductResult.newBalance,
+          });
+        }
 
         return reply.status(201).send({
           message: "Video created successfully",

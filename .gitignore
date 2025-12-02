@@ -63,4 +63,6 @@ Thumbs.db
 *.sln
 *.sw?
 
+# senha stripe
+stripe_backup_code.txt
 

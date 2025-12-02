@@ -168,7 +168,7 @@ export async function studentRoutes(fastify: FastifyInstance) {
     return { access_token: token, token }; // Return both for compatibility
   });
 
-  // Enroll in a course
+  // Enroll in a course (FREE courses only - paid courses use /payments/course/purchase-with-credits or /payments/course/create-intent)
   fastify.post(
     "/students/enroll/:courseId",
     { preHandler: [fastify.authenticate] },
@@ -190,6 +190,17 @@ export async function studentRoutes(fastify: FastifyInstance) {
 
       if (!course) {
         return reply.status(404).send({ message: "Course not found" });
+      }
+
+      // Check if course is free (price = 0 and no credit cost)
+      const isFree = parseFloat(course.price) === 0 && (!course.creditCost || course.creditCost === 0);
+      
+      if (!isFree) {
+        return reply.status(400).send({
+          message: "This course requires payment. Use /payments/course/purchase-with-credits or /payments/course/create-intent",
+          price: course.price,
+          creditCost: course.creditCost,
+        });
       }
 
       // Check if already enrolled
