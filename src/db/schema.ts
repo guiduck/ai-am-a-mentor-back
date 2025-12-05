@@ -332,3 +332,188 @@ export const quizAttemptsRelations = relations(quizAttempts, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+// ============================================================================
+// SUBSCRIPTION SYSTEM
+// ============================================================================
+
+// Subscription Plans - Planos disponíveis
+export const subscriptionPlans = pgTable("subscription_plans", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 50 }).notNull().unique(), // 'free', 'basic', 'pro', 'family'
+  displayName: varchar("display_name", { length: 100 }).notNull(),
+  type: varchar("type", { length: 20 }).notNull(), // 'creator' ou 'student'
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  billingPeriod: varchar("billing_period", { length: 20 }).default("monthly").notNull(),
+  stripePriceId: varchar("stripe_price_id", { length: 255 }), // ID do preço no Stripe
+  features: text("features").notNull(), // JSON: { courses: 5, videos: 50, quizzes_per_month: 5, commission_rate: 0.15, ai_questions_per_day: 5 }
+  isActive: integer("is_active").default(1).notNull(), // 0 = false, 1 = true
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// User Subscriptions - Assinaturas ativas dos usuários
+export const userSubscriptions = pgTable("user_subscriptions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  planId: uuid("plan_id")
+    .notNull()
+    .references(() => subscriptionPlans.id),
+  stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }),
+  stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
+  status: varchar("status", { length: 30 }).default("active").notNull(), // 'active', 'cancelled', 'past_due', 'trialing'
+  currentPeriodStart: timestamp("current_period_start"),
+  currentPeriodEnd: timestamp("current_period_end"),
+  cancelAtPeriodEnd: integer("cancel_at_period_end").default(0).notNull(), // 0 = false, 1 = true
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Usage Tracking - Controle de uso mensal
+export const usageLimits = pgTable("usage_limits", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  quizzesGenerated: integer("quizzes_generated").default(0).notNull(),
+  aiQuestionsAsked: integer("ai_questions_asked").default(0).notNull(),
+  videosUploaded: integer("videos_uploaded").default(0).notNull(),
+  coursesCreated: integer("courses_created").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Leads - Captura de leads da landing page
+export const leads = pgTable("leads", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 50 }),
+  type: varchar("type", { length: 20 }).notNull(), // 'creator' ou 'student'
+  source: varchar("source", { length: 100 }), // 'landing', 'facebook', 'google', etc.
+  utmSource: varchar("utm_source", { length: 100 }),
+  utmMedium: varchar("utm_medium", { length: 100 }),
+  utmCampaign: varchar("utm_campaign", { length: 100 }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Subscription Plans Relations
+export const subscriptionPlansRelations = relations(subscriptionPlans, ({ many }) => ({
+  subscriptions: many(userSubscriptions),
+}));
+
+// User Subscriptions Relations
+export const userSubscriptionsRelations = relations(userSubscriptions, ({ one }) => ({
+  user: one(users, {
+    fields: [userSubscriptions.userId],
+    references: [users.id],
+  }),
+  plan: one(subscriptionPlans, {
+    fields: [userSubscriptions.planId],
+    references: [subscriptionPlans.id],
+  }),
+}));
+
+// Usage Limits Relations
+export const usageLimitsRelations = relations(usageLimits, ({ one }) => ({
+  user: one(users, {
+    fields: [usageLimits.userId],
+    references: [users.id],
+  }),
+}));
+
+// ============================================================================
+// GAMIFICATION SYSTEM
+// ============================================================================
+
+// User Progress - XP, Level, Streaks
+export const userProgress = pgTable("user_progress", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  totalXp: integer("total_xp").default(0).notNull(),
+  level: integer("level").default(1).notNull(),
+  currentStreak: integer("current_streak").default(0).notNull(), // Days in a row studying
+  longestStreak: integer("longest_streak").default(0).notNull(),
+  lastActivityDate: timestamp("last_activity_date"),
+  lessonsCompleted: integer("lessons_completed").default(0).notNull(),
+  quizzesPassed: integer("quizzes_passed").default(0).notNull(),
+  coursesCompleted: integer("courses_completed").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Badges - Available badges in the system
+export const badges = pgTable("badges", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull().unique(),
+  displayName: varchar("display_name", { length: 255 }).notNull(),
+  description: text("description"),
+  icon: varchar("icon", { length: 50 }).notNull(), // Emoji or icon code
+  category: varchar("category", { length: 50 }).notNull(), // 'achievement', 'streak', 'social', 'course'
+  requirement: text("requirement"), // JSON: { type: 'xp', value: 1000 } or { type: 'lessons', value: 10 }
+  xpReward: integer("xp_reward").default(0).notNull(),
+  isActive: integer("is_active").default(1).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// User Badges - Badges earned by users
+export const userBadges = pgTable("user_badges", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  badgeId: uuid("badge_id")
+    .notNull()
+    .references(() => badges.id, { onDelete: "cascade" }),
+  earnedAt: timestamp("earned_at").defaultNow(),
+});
+
+// XP Transactions - History of XP gains
+export const xpTransactions = pgTable("xp_transactions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  amount: integer("amount").notNull(),
+  source: varchar("source", { length: 50 }).notNull(), // 'lesson', 'quiz', 'streak', 'badge', 'course'
+  sourceId: uuid("source_id"), // ID of the related entity
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Gamification Relations
+export const userProgressRelations = relations(userProgress, ({ one }) => ({
+  user: one(users, {
+    fields: [userProgress.userId],
+    references: [users.id],
+  }),
+}));
+
+export const badgesRelations = relations(badges, ({ many }) => ({
+  userBadges: many(userBadges),
+}));
+
+export const userBadgesRelations = relations(userBadges, ({ one }) => ({
+  user: one(users, {
+    fields: [userBadges.userId],
+    references: [users.id],
+  }),
+  badge: one(badges, {
+    fields: [userBadges.badgeId],
+    references: [badges.id],
+  }),
+}));
+
+export const xpTransactionsRelations = relations(xpTransactions, ({ one }) => ({
+  user: one(users, {
+    fields: [xpTransactions.userId],
+    references: [users.id],
+  }),
+}));

@@ -6,6 +6,9 @@ import { userRoutes } from "./modules/users/users.routes";
 import { paymentRoutes } from "./modules/payments/payments.routes";
 import { connectRoutes } from "./modules/payments/connect.routes";
 import { quizRoutes } from "./modules/quizzes/quizzes.routes";
+import { leadsRoutes } from "./modules/leads/leads.routes";
+import { subscriptionRoutes } from "./modules/subscriptions/subscriptions.routes";
+import { gamificationRoutes } from "./modules/gamification/gamification.routes";
 
 export async function routes(fastify: FastifyInstance) {
   fastify.get("/health", async (request, reply) => {
@@ -19,4 +22,7 @@ export async function routes(fastify: FastifyInstance) {
   fastify.register(paymentRoutes, { prefix: "/api" });
   fastify.register(connectRoutes, { prefix: "/api" });
   fastify.register(quizRoutes, { prefix: "/api" });
+  fastify.register(leadsRoutes, { prefix: "/api" });
+  fastify.register(subscriptionRoutes, { prefix: "/api" });
+  fastify.register(gamificationRoutes, { prefix: "/api" });
 }
