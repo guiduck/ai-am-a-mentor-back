@@ -95,7 +95,10 @@ export async function userRoutes(fastify: FastifyInstance) {
         }
 
         // Check if username is being changed and if it's already taken
-        if (updateData.username && updateData.username !== currentUser.username) {
+        if (
+          updateData.username &&
+          updateData.username !== currentUser.username
+        ) {
           const existingUser = await db.query.users.findFirst({
             where: eq(users.username, updateData.username),
           });
@@ -139,7 +142,10 @@ export async function userRoutes(fastify: FastifyInstance) {
         }
 
         if (updateData.password) {
-          updateFields.passwordHash = await bcrypt.hash(updateData.password, 10);
+          updateFields.passwordHash = await bcrypt.hash(
+            updateData.password,
+            10
+          );
         }
 
         // Update user

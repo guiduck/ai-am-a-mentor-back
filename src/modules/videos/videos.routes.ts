@@ -521,7 +521,9 @@ export async function videoRoutes(fastify: FastifyInstance) {
               error: "Insufficient credits",
               required: creditCost,
               current: balance,
-              message: `You need ${creditCost} credits to upload this video (${Math.ceil(duration / 60)} minutes). Your current balance is ${balance} credits.`,
+              message: `You need ${creditCost} credits to upload this video (${Math.ceil(
+                duration / 60
+              )} minutes). Your current balance is ${balance} credits.`,
             });
           }
         }
@@ -552,7 +554,9 @@ export async function videoRoutes(fastify: FastifyInstance) {
             await db.delete(videos).where(eq(videos.id, newVideo[0].id));
             return reply.status(500).send({
               error: "Failed to deduct credits",
-              message: deductResult.error || "An error occurred while processing credits",
+              message:
+                deductResult.error ||
+                "An error occurred while processing credits",
             });
           }
 

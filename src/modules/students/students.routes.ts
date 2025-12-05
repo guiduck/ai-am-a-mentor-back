@@ -193,11 +193,14 @@ export async function studentRoutes(fastify: FastifyInstance) {
       }
 
       // Check if course is free (price = 0 and no credit cost)
-      const isFree = parseFloat(course.price) === 0 && (!course.creditCost || course.creditCost === 0);
-      
+      const isFree =
+        parseFloat(course.price) === 0 &&
+        (!course.creditCost || course.creditCost === 0);
+
       if (!isFree) {
         return reply.status(400).send({
-          message: "This course requires payment. Use /payments/course/purchase-with-credits or /payments/course/create-intent",
+          message:
+            "This course requires payment. Use /payments/course/purchase-with-credits or /payments/course/create-intent",
           price: course.price,
           creditCost: course.creditCost,
         });

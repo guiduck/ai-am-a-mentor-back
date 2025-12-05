@@ -297,7 +297,7 @@ export async function creatorRoutes(fastify: FastifyInstance) {
 
       // Delete all video files from R2 before deleting the course
       const { deleteFileFromR2 } = await import("../../services/cloudflare-r2");
-      
+
       for (const video of course.videos) {
         // Delete video file from R2
         if (video.r2Key) {
