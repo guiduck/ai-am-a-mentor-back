@@ -77,14 +77,17 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem comen
   ]
 }`;
 
-    console.log(`Generating quiz for video ${videoId} with ${numQuestions} questions...`);
+    console.log(
+      `Generating quiz for video ${videoId} with ${numQuestions} questions...`
+    );
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
-          content: "Você é um assistente que gera quizzes educacionais em formato JSON. Sempre responda com JSON válido, sem markdown ou código extra."
+          content:
+            "Você é um assistente que gera quizzes educacionais em formato JSON. Sempre responda com JSON válido, sem markdown ou código extra.",
         },
         {
           role: "user",
@@ -112,7 +115,11 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem comen
       const quiz: GeneratedQuiz = JSON.parse(cleanedContent);
 
       // Validate structure
-      if (!quiz.questions || !Array.isArray(quiz.questions) || quiz.questions.length === 0) {
+      if (
+        !quiz.questions ||
+        !Array.isArray(quiz.questions) ||
+        quiz.questions.length === 0
+      ) {
         console.error("Invalid quiz structure: no questions");
         return null;
       }
@@ -204,7 +211,11 @@ export async function createQuizForVideo(
   videoTitle: string,
   numQuestions: number = 5
 ): Promise<{ quizId: string; questionsCount: number } | null> {
-  const generatedQuiz = await generateQuizFromTranscript(videoId, videoTitle, numQuestions);
+  const generatedQuiz = await generateQuizFromTranscript(
+    videoId,
+    videoTitle,
+    numQuestions
+  );
 
   if (!generatedQuiz) {
     return null;
@@ -230,5 +241,5 @@ export function estimateQuizCreditCost(numQuestions: number = 5): number {
   // Base cost + per question cost
   const baseCost = 30;
   const perQuestionCost = 4;
-  return baseCost + (numQuestions * perQuestionCost);
+  return baseCost + numQuestions * perQuestionCost;
 }

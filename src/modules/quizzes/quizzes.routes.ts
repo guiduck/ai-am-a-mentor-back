@@ -38,7 +38,10 @@ const submitQuizSchema = z.object({
 // Helper Functions
 // ============================================================================
 
-async function isCreatorOfVideo(userId: string, videoId: string): Promise<boolean> {
+async function isCreatorOfVideo(
+  userId: string,
+  videoId: string
+): Promise<boolean> {
   const video = await db.query.videos.findFirst({
     where: eq(videos.id, videoId),
     with: {
@@ -50,7 +53,10 @@ async function isCreatorOfVideo(userId: string, videoId: string): Promise<boolea
   return video.course.creatorId === userId;
 }
 
-async function isEnrolledInCourse(studentId: string, courseId: string): Promise<boolean> {
+async function isEnrolledInCourse(
+  studentId: string,
+  courseId: string
+): Promise<boolean> {
   const enrollment = await db.query.enrollments.findFirst({
     where: and(
       eq(enrollments.studentId, studentId),
@@ -76,7 +82,9 @@ export async function quizRoutes(fastify: FastifyInstance) {
       try {
         const userId = request.user.id;
         const userRole = request.user.role;
-        const { videoId, numQuestions } = generateQuizSchema.parse(request.body);
+        const { videoId, numQuestions } = generateQuizSchema.parse(
+          request.body
+        );
 
         // Only creators can generate quizzes
         if (userRole !== "creator") {
@@ -115,11 +123,16 @@ export async function quizRoutes(fastify: FastifyInstance) {
         }
 
         // Generate quiz
-        const result = await createQuizForVideo(videoId, video.title, numQuestions);
+        const result = await createQuizForVideo(
+          videoId,
+          video.title,
+          numQuestions
+        );
 
         if (!result) {
           return reply.status(500).send({
-            error: "Erro ao gerar quiz. Verifique se o vídeo possui transcrição.",
+            error:
+              "Erro ao gerar quiz. Verifique se o vídeo possui transcrição.",
           });
         }
 
@@ -141,7 +154,7 @@ export async function quizRoutes(fastify: FastifyInstance) {
       } catch (error: any) {
         console.error("Error generating quiz:", error);
         if (error instanceof z.ZodError) {
-          return reply.status(400).send({ error: error.errors });
+          return reply.status(400).send({ error: error.issues });
         }
         return reply.status(500).send({ error: error.message });
       }
@@ -177,7 +190,8 @@ export async function quizRoutes(fastify: FastifyInstance) {
 
         if (!isOwner && !enrolled) {
           return reply.status(403).send({
-            error: "Você precisa estar matriculado no curso para acessar o quiz",
+            error:
+              "Você precisa estar matriculado no curso para acessar o quiz",
           });
         }
 
@@ -295,7 +309,8 @@ export async function quizRoutes(fastify: FastifyInstance) {
         const enrolled = await isEnrolledInCourse(userId, quiz.video.courseId);
         if (!enrolled) {
           return reply.status(403).send({
-            error: "Você precisa estar matriculado no curso para responder o quiz",
+            error:
+              "Você precisa estar matriculado no curso para responder o quiz",
           });
         }
 
@@ -356,7 +371,7 @@ export async function quizRoutes(fastify: FastifyInstance) {
       } catch (error: any) {
         console.error("Error submitting quiz:", error);
         if (error instanceof z.ZodError) {
-          return reply.status(400).send({ error: error.errors });
+          return reply.status(400).send({ error: error.issues });
         }
         return reply.status(500).send({ error: error.message });
       }
@@ -389,7 +404,10 @@ export async function quizRoutes(fastify: FastifyInstance) {
             completedAt: a.completedAt,
           })),
           totalAttempts: attempts.length,
-          bestScore: attempts.length > 0 ? Math.max(...attempts.map((a) => a.score)) : null,
+          bestScore:
+            attempts.length > 0
+              ? Math.max(...attempts.map((a) => a.score))
+              : null,
         };
       } catch (error: any) {
         console.error("Error getting attempts:", error);
@@ -462,4 +480,3 @@ export async function quizRoutes(fastify: FastifyInstance) {
     },
   });
 }
-
