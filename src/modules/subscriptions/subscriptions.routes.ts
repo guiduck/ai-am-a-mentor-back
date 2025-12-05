@@ -4,9 +4,6 @@
  */
 
 import { FastifyInstance } from "fastify";
-import { z } from "zod";
-import { db } from "../../db";
-import { leads } from "../../db/schema";
 import {
   getSubscriptionPlans,
   getUserSubscription,
@@ -169,57 +166,7 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
     },
   });
 
-  // ============================================================================
-  // LEADS (Landing page capture)
-  // ============================================================================
-
-  // Capture lead from landing page
-  fastify.post("/leads", {
-    handler: async (request, reply) => {
-      try {
-        const leadSchema = z.object({
-          name: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
-          email: z.string().email("Email inválido"),
-          phone: z.string().optional(),
-          type: z.enum(["creator", "student"]),
-          source: z.string().optional(),
-          utmSource: z.string().optional(),
-          utmMedium: z.string().optional(),
-          utmCampaign: z.string().optional(),
-        });
-
-        const data = leadSchema.parse(request.body);
-
-        const [newLead] = await db
-          .insert(leads)
-          .values({
-            name: data.name,
-            email: data.email,
-            phone: data.phone,
-            type: data.type,
-            source: data.source || "landing",
-            utmSource: data.utmSource,
-            utmMedium: data.utmMedium,
-            utmCampaign: data.utmCampaign,
-          })
-          .returning();
-
-        return {
-          success: true,
-          message: "Cadastro realizado com sucesso!",
-          leadId: newLead.id,
-        };
-      } catch (error: any) {
-        console.error("Error capturing lead:", error);
-
-        if (error instanceof z.ZodError) {
-          return reply.status(400).send({ error: error.issues[0].message });
-        }
-
-        return reply.status(500).send({ error: "Erro ao processar cadastro" });
-      }
-    },
-  });
+  // NOTE: Leads route is handled by leads.routes.ts
 
   // ============================================================================
   // WEBHOOK (Stripe subscription events)
