@@ -27,19 +27,31 @@ import {
   deductCredits,
   getUserTransactions,
 } from "../../services/credits";
+import {
+  createConnectAccount,
+  createOnboardingLink,
+  checkAccountStatus,
+  createCoursePaymentWithSplit,
+  getCreatorDashboardLink,
+  getCreatorBalance,
+} from "../../services/stripe-connect";
 
 // ============================================================================
 // Validation Schemas
 // ============================================================================
 
+const paymentMethodSchema = z.enum(["card", "boleto"]).default("card");
+
 const createCreditsPaymentSchema = z.object({
   amount: z.number().positive().min(1),
   creditsAmount: z.number().int().positive().min(1),
+  paymentMethod: paymentMethodSchema,
 });
 
 const createCoursePaymentSchema = z.object({
   courseId: z.string().uuid(),
   amount: z.number().positive().min(0.01),
+  paymentMethod: paymentMethodSchema,
 });
 
 const confirmPaymentSchema = z.object({
@@ -159,13 +171,14 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
   /**
    * POST /payments/credits/create-intent - Create payment intent for credits
+   * Supports both card and PIX payments
    */
   fastify.post("/payments/credits/create-intent", {
     preHandler: [fastify.authenticate],
     handler: async (request, reply) => {
       try {
         const userId = request.user.id;
-        const { amount, creditsAmount } = createCreditsPaymentSchema.parse(request.body);
+        const { amount, creditsAmount, paymentMethod } = createCreditsPaymentSchema.parse(request.body);
 
         // Get user
         const user = await getUserById(userId);
@@ -181,30 +194,43 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           });
         }
 
-        // Create payment intent
-        const { clientSecret, paymentIntentId, error } = await createCreditsPaymentIntent(
+        // Create payment intent with specified method (card or pix)
+        const result = await createCreditsPaymentIntent(
           amount,
           userId,
-          creditsAmount
+          creditsAmount,
+          paymentMethod
         );
-        if (error || !clientSecret) {
+        
+        if (result.error || !result.clientSecret) {
           return reply.status(500).send({
-            error: error || "Falha ao criar intenção de pagamento",
+            error: result.error || "Falha ao criar intenção de pagamento",
           });
         }
 
         // Save payment record
         await db.insert(payments).values({
           userId,
-          stripePaymentIntentId: paymentIntentId,
+          stripePaymentIntentId: result.paymentIntentId,
           stripeCustomerId: customerId,
           amount: amount.toString(),
           status: "pending",
           creditsAwarded: creditsAmount,
           paymentType: "credits",
+          metadata: { paymentMethod },
         });
 
-        return { clientSecret, paymentIntentId, amount, creditsAmount };
+        return {
+          clientSecret: result.clientSecret,
+          paymentIntentId: result.paymentIntentId,
+          amount,
+          creditsAmount,
+          paymentMethod,
+          // Boleto specific data
+          boletoUrl: result.boletoUrl,
+          boletoNumber: result.boletoNumber,
+          boletoExpiresAt: result.boletoExpiresAt,
+        };
       } catch (error: any) {
         return handleValidationError(reply, error);
       }
@@ -213,13 +239,14 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
   /**
    * POST /payments/course/create-intent - Create payment intent for course
+   * Supports both card and PIX payments
    */
   fastify.post("/payments/course/create-intent", {
     preHandler: [fastify.authenticate],
     handler: async (request, reply) => {
       try {
         const userId = request.user.id;
-        const { courseId, amount } = createCoursePaymentSchema.parse(request.body);
+        const { courseId, amount, paymentMethod } = createCoursePaymentSchema.parse(request.body);
 
         // Verify course exists
         const course = await getCourseById(courseId);
@@ -246,30 +273,43 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           });
         }
 
-        // Create payment intent
-        const { clientSecret, paymentIntentId, error } = await createCoursePaymentIntent(
+        // Create payment intent with specified method (card or pix)
+        const result = await createCoursePaymentIntent(
           amount,
           userId,
-          courseId
+          courseId,
+          paymentMethod
         );
-        if (error || !clientSecret) {
+        
+        if (result.error || !result.clientSecret) {
           return reply.status(500).send({
-            error: error || "Falha ao criar intenção de pagamento",
+            error: result.error || "Falha ao criar intenção de pagamento",
           });
         }
 
         // Save payment record
         await db.insert(payments).values({
           userId,
-          stripePaymentIntentId: paymentIntentId,
+          stripePaymentIntentId: result.paymentIntentId,
           stripeCustomerId: customerId,
           amount: amount.toString(),
           status: "pending",
           paymentType: "course",
           courseId,
+          metadata: { paymentMethod },
         });
 
-        return { clientSecret, paymentIntentId, amount, courseId };
+        return {
+          clientSecret: result.clientSecret,
+          paymentIntentId: result.paymentIntentId,
+          amount,
+          courseId,
+          paymentMethod,
+          // Boleto specific data
+          boletoUrl: result.boletoUrl,
+          boletoNumber: result.boletoNumber,
+          boletoExpiresAt: result.boletoExpiresAt,
+        };
       } catch (error: any) {
         return handleValidationError(reply, error);
       }
@@ -349,77 +389,57 @@ export async function paymentRoutes(fastify: FastifyInstance) {
   });
 
   // --------------------------------------------------------------------------
-  // Credit Purchase Routes
+  // AI Credits Usage (for questions and quiz generation)
   // --------------------------------------------------------------------------
 
   /**
-   * POST /payments/course/purchase-with-credits - Purchase course with credits
+   * POST /payments/ai/use-credits - Use credits for AI features
+   * This is used for:
+   * - Students asking questions (costs based on tokens)
+   * - Creators generating quizzes (fixed cost)
    */
-  fastify.post("/payments/course/purchase-with-credits", {
+  fastify.post("/payments/ai/use-credits", {
     preHandler: [fastify.authenticate],
     handler: async (request, reply) => {
       try {
         const userId = request.user.id;
-        const { courseId } = purchaseWithCreditsSchema.parse(request.body);
-
-        // Get course
-        const course = await getCourseById(courseId);
-        if (!course) {
-          return reply.status(404).send({ error: "Curso não encontrado" });
-        }
-
-        // Check if course can be purchased with credits
-        if (!course.creditCost || course.creditCost <= 0) {
-          return reply.status(400).send({
-            error: "Este curso não pode ser comprado com créditos",
-          });
-        }
+        const schema = z.object({
+          amount: z.number().int().positive(),
+          feature: z.enum(["question", "quiz_generation"]),
+          description: z.string().optional(),
+          entityId: z.string().optional(),
+        });
+        
+        const { amount, feature, description, entityId } = schema.parse(request.body);
 
         // Check balance
         const balance = await getUserCredits(userId);
-        if (balance < course.creditCost) {
+        if (balance < amount) {
           return reply.status(400).send({
             error: "Créditos insuficientes",
-            required: course.creditCost,
+            required: amount,
             current: balance,
           });
-        }
-
-        // Check if already enrolled
-        if (await isUserEnrolled(userId, courseId)) {
-          return reply.status(409).send({ error: "Você já está inscrito neste curso" });
         }
 
         // Deduct credits
         const deductResult = await deductCredits(
           userId,
-          course.creditCost,
-          `Compra do curso: ${course.title}`,
-          courseId,
-          "course"
+          amount,
+          description || `Uso de IA: ${feature}`,
+          entityId,
+          feature
         );
+        
         if (!deductResult.success) {
           return reply.status(500).send({
             error: deductResult.error || "Falha ao deduzir créditos",
           });
         }
 
-        // Create enrollment
-        await createEnrollment(userId, courseId);
-
-        // Create purchase record
-        await db.insert(coursePurchases).values({
-          studentId: userId,
-          courseId,
-          paymentMethod: "credits",
-          creditsUsed: course.creditCost,
-          transactionId: deductResult.transactionId,
-        });
-
         return {
           success: true,
-          message: "Curso comprado com sucesso",
-          creditsUsed: course.creditCost,
+          creditsUsed: amount,
           newBalance: deductResult.newBalance,
         };
       } catch (error: any) {

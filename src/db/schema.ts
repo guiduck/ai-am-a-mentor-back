@@ -15,6 +15,9 @@ export const users = pgTable("users", {
   email: varchar("email", { length: 255 }).unique().notNull(),
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
   role: varchar("role", { length: 50 }).notNull(),
+  // Stripe Connect fields (for creators to receive payments)
+  stripeAccountId: varchar("stripe_account_id", { length: 255 }),
+  stripeOnboardingComplete: integer("stripe_onboarding_complete").default(0), // 0 = false, 1 = true
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -149,8 +152,53 @@ export const coursePurchases = pgTable("course_purchases", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Adicionar campo creditCost aos cursos (opcional, para compra com créditos)
-// Isso será feito via migration, mas vamos adicionar ao schema também
+// ============================================================================
+// QUIZ SYSTEM
+// ============================================================================
+
+// Quizzes - Quiz associado a um vídeo
+export const quizzes = pgTable("quizzes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  videoId: uuid("video_id")
+    .notNull()
+    .unique() // Um quiz por vídeo
+    .references(() => videos.id, { onDelete: "cascade" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  passingScore: integer("passing_score").default(70).notNull(), // Porcentagem mínima para passar
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Quiz Questions - Perguntas do quiz
+export const quizQuestions = pgTable("quiz_questions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  quizId: uuid("quiz_id")
+    .notNull()
+    .references(() => quizzes.id, { onDelete: "cascade" }),
+  question: text("question").notNull(),
+  questionType: varchar("question_type", { length: 50 }).default("multiple_choice").notNull(),
+  options: text("options").notNull(), // JSON array of options
+  correctAnswer: text("correct_answer").notNull(), // Index or value of correct answer
+  explanation: text("explanation"), // Explicação da resposta correta
+  order: integer("order").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Quiz Attempts - Tentativas de alunos
+export const quizAttempts = pgTable("quiz_attempts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  quizId: uuid("quiz_id")
+    .notNull()
+    .references(() => quizzes.id, { onDelete: "cascade" }),
+  studentId: uuid("student_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  score: integer("score").notNull(), // Pontuação (0-100)
+  passed: integer("passed").default(0).notNull(), // 0 = false, 1 = true
+  answers: text("answers").notNull(), // JSON with student's answers
+  completedAt: timestamp("completed_at").defaultNow(),
+});
 
 // Relations
 export const usersRelations = relations(users, ({ one, many }) => ({
@@ -178,6 +226,7 @@ export const videosRelations = relations(videos, ({ one, many }) => ({
   }),
   transcripts: many(transcripts),
   comments: many(comments),
+  quiz: one(quizzes),
 }));
 
 export const transcriptsRelations = relations(transcripts, ({ one }) => ({
@@ -255,3 +304,31 @@ export const coursePurchasesRelations = relations(
     }),
   })
 );
+
+// Quiz Relations
+export const quizzesRelations = relations(quizzes, ({ one, many }) => ({
+  video: one(videos, {
+    fields: [quizzes.videoId],
+    references: [videos.id],
+  }),
+  questions: many(quizQuestions),
+  attempts: many(quizAttempts),
+}));
+
+export const quizQuestionsRelations = relations(quizQuestions, ({ one }) => ({
+  quiz: one(quizzes, {
+    fields: [quizQuestions.quizId],
+    references: [quizzes.id],
+  }),
+}));
+
+export const quizAttemptsRelations = relations(quizAttempts, ({ one }) => ({
+  quiz: one(quizzes, {
+    fields: [quizAttempts.quizId],
+    references: [quizzes.id],
+  }),
+  student: one(users, {
+    fields: [quizAttempts.studentId],
+    references: [users.id],
+  }),
+}));

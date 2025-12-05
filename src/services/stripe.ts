@@ -1,6 +1,6 @@
 /**
  * Stripe Payment Service
- * Handles payment processing with Stripe
+ * Handles payment processing with Stripe (Card + Boleto)
  */
 
 import Stripe from "stripe";
@@ -21,39 +21,70 @@ function getStripeClient(): Stripe {
   return stripeClient;
 }
 
+// Payment method types
+export type PaymentMethodType = "card" | "boleto";
+
+interface PaymentIntentResult {
+  clientSecret: string;
+  paymentIntentId: string;
+  paymentMethod: PaymentMethodType;
+  // Boleto specific data
+  boletoUrl?: string;
+  boletoNumber?: string;
+  boletoExpiresAt?: number;
+  error?: string;
+}
+
 /**
  * Create a Payment Intent for purchasing credits
+ * @param paymentMethod - "card" or "boleto"
  */
 export async function createCreditsPaymentIntent(
   amount: number, // Amount in reais (BRL)
   userId: string,
-  creditsAmount: number
-): Promise<{ clientSecret: string; paymentIntentId: string; error?: string }> {
+  creditsAmount: number,
+  paymentMethod: PaymentMethodType = "card"
+): Promise<PaymentIntentResult> {
   try {
     const stripe = getStripeClient();
 
     // Convert reais to centavos (Stripe uses smallest currency unit)
     const amountInCents = Math.round(amount * 100);
 
-    const paymentIntent = await stripe.paymentIntents.create({
+    const paymentIntentData: Stripe.PaymentIntentCreateParams = {
       amount: amountInCents,
       currency: "brl",
+      payment_method_types: [paymentMethod],
       metadata: {
         userId,
         creditsAmount: creditsAmount.toString(),
         type: "credits",
+        paymentMethod,
       },
-    });
+    };
 
-    return {
+    const paymentIntent = await stripe.paymentIntents.create(paymentIntentData);
+
+    const result: PaymentIntentResult = {
       clientSecret: paymentIntent.client_secret || "",
       paymentIntentId: paymentIntent.id,
+      paymentMethod,
     };
+
+    // For Boleto, extract boleto data if available
+    if (paymentMethod === "boleto" && paymentIntent.next_action?.boleto_display_details) {
+      result.boletoUrl = paymentIntent.next_action.boleto_display_details.hosted_voucher_url;
+      result.boletoNumber = paymentIntent.next_action.boleto_display_details.number;
+      result.boletoExpiresAt = paymentIntent.next_action.boleto_display_details.expires_at;
+    }
+
+    return result;
   } catch (error: any) {
     console.error("Error creating payment intent:", error);
     return {
       clientSecret: "",
       paymentIntentId: "",
+      paymentMethod,
       error: error.message || "Failed to create payment intent",
     };
   }
@@ -61,37 +92,54 @@ export async function createCreditsPaymentIntent(
 
 /**
  * Create a Payment Intent for purchasing a course
+ * @param paymentMethod - "card" or "boleto"
  */
 export async function createCoursePaymentIntent(
   amount: number, // Amount in reais (BRL)
   userId: string,
-  courseId: string
-): Promise<{ clientSecret: string; paymentIntentId: string; error?: string }> {
+  courseId: string,
+  paymentMethod: PaymentMethodType = "card"
+): Promise<PaymentIntentResult> {
   try {
     const stripe = getStripeClient();
 
     // Convert reais to centavos
     const amountInCents = Math.round(amount * 100);
 
-    const paymentIntent = await stripe.paymentIntents.create({
+    const paymentIntentData: Stripe.PaymentIntentCreateParams = {
       amount: amountInCents,
       currency: "brl",
+      payment_method_types: [paymentMethod],
       metadata: {
         userId,
         courseId,
         type: "course",
+        paymentMethod,
       },
-    });
+    };
 
-    return {
+    const paymentIntent = await stripe.paymentIntents.create(paymentIntentData);
+
+    const result: PaymentIntentResult = {
       clientSecret: paymentIntent.client_secret || "",
       paymentIntentId: paymentIntent.id,
+      paymentMethod,
     };
+
+    // For Boleto, extract boleto data if available
+    if (paymentMethod === "boleto" && paymentIntent.next_action?.boleto_display_details) {
+      result.boletoUrl = paymentIntent.next_action.boleto_display_details.hosted_voucher_url;
+      result.boletoNumber = paymentIntent.next_action.boleto_display_details.number;
+      result.boletoExpiresAt = paymentIntent.next_action.boleto_display_details.expires_at;
+    }
+
+    return result;
   } catch (error: any) {
     console.error("Error creating course payment intent:", error);
     return {
       clientSecret: "",
       paymentIntentId: "",
+      paymentMethod,
       error: error.message || "Failed to create payment intent",
     };
   }
@@ -158,4 +206,3 @@ export async function getOrCreateCustomer(
     };
   }
 }
-

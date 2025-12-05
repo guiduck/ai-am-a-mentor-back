@@ -28,3 +28,6 @@ export function calculateAIChatCost(): number {
   return 1;
 }
 
+
+
+
