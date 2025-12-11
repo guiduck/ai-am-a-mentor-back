@@ -102,7 +102,10 @@ async function getCourseById(courseId: string) {
  */
 async function isUserEnrolled(userId: string, courseId: string) {
   const enrollment = await db.query.enrollments.findFirst({
-    where: and(eq(enrollments.studentId, userId), eq(enrollments.courseId, courseId)),
+    where: and(
+      eq(enrollments.studentId, userId),
+      eq(enrollments.courseId, courseId)
+    ),
   });
   return !!enrollment;
 }
@@ -178,7 +181,8 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     handler: async (request, reply) => {
       try {
         const userId = request.user.id;
-        const { amount, creditsAmount, paymentMethod } = createCreditsPaymentSchema.parse(request.body);
+        const { amount, creditsAmount, paymentMethod } =
+          createCreditsPaymentSchema.parse(request.body);
 
         // Get user
         const user = await getUserById(userId);
@@ -187,7 +191,10 @@ export async function paymentRoutes(fastify: FastifyInstance) {
         }
 
         // Get or create Stripe customer
-        const { customerId, error: customerError } = await getOrCreateCustomer(userId, user.email);
+        const { customerId, error: customerError } = await getOrCreateCustomer(
+          userId,
+          user.email
+        );
         if (customerError || !customerId) {
           return reply.status(500).send({
             error: customerError || "Falha ao criar cliente no Stripe",
@@ -201,7 +208,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           creditsAmount,
           paymentMethod
         );
-        
+
         if (result.error || !result.clientSecret) {
           return reply.status(500).send({
             error: result.error || "Falha ao criar intenção de pagamento",
@@ -246,7 +253,8 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     handler: async (request, reply) => {
       try {
         const userId = request.user.id;
-        const { courseId, amount, paymentMethod } = createCoursePaymentSchema.parse(request.body);
+        const { courseId, amount, paymentMethod } =
+          createCoursePaymentSchema.parse(request.body);
 
         // Verify course exists
         const course = await getCourseById(courseId);
@@ -262,11 +270,16 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
         // Check if already enrolled
         if (await isUserEnrolled(userId, courseId)) {
-          return reply.status(409).send({ error: "Você já está inscrito neste curso" });
+          return reply
+            .status(409)
+            .send({ error: "Você já está inscrito neste curso" });
         }
 
         // Get or create Stripe customer
-        const { customerId, error: customerError } = await getOrCreateCustomer(userId, user.email);
+        const { customerId, error: customerError } = await getOrCreateCustomer(
+          userId,
+          user.email
+        );
         if (customerError || !customerId) {
           return reply.status(500).send({
             error: customerError || "Falha ao criar cliente no Stripe",
@@ -280,7 +293,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           courseId,
           paymentMethod
         );
-        
+
         if (result.error || !result.clientSecret) {
           return reply.status(500).send({
             error: result.error || "Falha ao criar intenção de pagamento",
@@ -331,7 +344,11 @@ export async function paymentRoutes(fastify: FastifyInstance) {
         const { paymentIntentId } = confirmPaymentSchema.parse(request.body);
 
         // Verify payment with Stripe
-        const { status, succeeded, error: verifyError } = await verifyPaymentIntent(paymentIntentId);
+        const {
+          status,
+          succeeded,
+          error: verifyError,
+        } = await verifyPaymentIntent(paymentIntentId);
         if (verifyError) {
           return reply.status(500).send({ error: verifyError });
         }
@@ -352,11 +369,18 @@ export async function paymentRoutes(fastify: FastifyInstance) {
         // Update payment status
         await db
           .update(payments)
-          .set({ status: succeeded ? "succeeded" : status, updatedAt: new Date() })
+          .set({
+            status: succeeded ? "succeeded" : status,
+            updatedAt: new Date(),
+          })
           .where(eq(payments.stripePaymentIntentId, paymentIntentId));
 
         // If credits purchase succeeded, add credits
-        if (succeeded && payment.paymentType === "credits" && payment.creditsAwarded) {
+        if (
+          succeeded &&
+          payment.paymentType === "credits" &&
+          payment.creditsAwarded
+        ) {
           await addCredits(
             userId,
             payment.creditsAwarded,
@@ -368,7 +392,10 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
         // If course purchase succeeded, create enrollment
         if (succeeded && payment.paymentType === "course" && payment.courseId) {
-          const alreadyEnrolled = await isUserEnrolled(userId, payment.courseId);
+          const alreadyEnrolled = await isUserEnrolled(
+            userId,
+            payment.courseId
+          );
           if (!alreadyEnrolled) {
             await createEnrollment(userId, payment.courseId);
             await db.insert(coursePurchases).values({
@@ -409,8 +436,10 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           description: z.string().optional(),
           entityId: z.string().optional(),
         });
-        
-        const { amount, feature, description, entityId } = schema.parse(request.body);
+
+        const { amount, feature, description, entityId } = schema.parse(
+          request.body
+        );
 
         // Check balance
         const balance = await getUserCredits(userId);
@@ -430,7 +459,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           entityId,
           feature
         );
-        
+
         if (!deductResult.success) {
           return reply.status(500).send({
             error: deductResult.error || "Falha ao deduzir créditos",
@@ -503,7 +532,10 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
             // Create enrollment if course purchase
             if (payment.paymentType === "course" && payment.courseId) {
-              const alreadyEnrolled = await isUserEnrolled(payment.userId, payment.courseId);
+              const alreadyEnrolled = await isUserEnrolled(
+                payment.userId,
+                payment.courseId
+              );
               if (!alreadyEnrolled) {
                 await createEnrollment(payment.userId, payment.courseId);
               }
@@ -514,7 +546,9 @@ export async function paymentRoutes(fastify: FastifyInstance) {
         return { received: true };
       } catch (error: any) {
         console.error("Webhook error:", error);
-        return reply.status(400).send({ error: `Webhook Error: ${error.message}` });
+        return reply
+          .status(400)
+          .send({ error: `Webhook Error: ${error.message}` });
       }
     },
   });

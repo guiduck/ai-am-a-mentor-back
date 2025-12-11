@@ -14,6 +14,7 @@ import {
   canPerformAction,
   getPlanByName,
 } from "../../services/subscriptions";
+import { db } from "../../db";
 
 export async function subscriptionRoutes(fastify: FastifyInstance) {
   // Get all available plans
@@ -61,14 +62,23 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
         const userId = request.user.id;
         const { action } = request.params as { action: string };
 
-        const validActions = ["create_course", "upload_video", "generate_quiz", "ask_ai"];
+        const validActions = [
+          "create_course",
+          "upload_video",
+          "generate_quiz",
+          "ask_ai",
+        ];
         if (!validActions.includes(action)) {
           return reply.status(400).send({ error: "Ação inválida" });
         }
 
         const result = await canPerformAction(
           userId,
-          action as "create_course" | "upload_video" | "generate_quiz" | "ask_ai"
+          action as
+            | "create_course"
+            | "upload_video"
+            | "generate_quiz"
+            | "ask_ai"
         );
 
         return result;
@@ -85,14 +95,29 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
     handler: async (request, reply) => {
       try {
         const userId = request.user.id;
-        const email = request.user.email;
         const { planId } = request.body as { planId: string };
 
         if (!planId) {
           return reply.status(400).send({ error: "planId é obrigatório" });
         }
 
-        const result = await createSubscriptionCheckout(userId, planId, email);
+        // Get user email from database
+        const user = await db.query.users.findFirst({
+          where: (users, { eq }) => eq(users.id, userId),
+          columns: { email: true },
+        });
+
+        if (!user?.email) {
+          return reply
+            .status(400)
+            .send({ error: "Email do usuário não encontrado" });
+        }
+
+        const result = await createSubscriptionCheckout(
+          userId,
+          planId,
+          user.email
+        );
 
         if ("error" in result) {
           return reply.status(400).send({ error: result.error });
@@ -114,11 +139,14 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
         const userId = request.user.id;
         const userRole = request.user.role;
 
-        const planName = userRole === "creator" ? "creator_free" : "student_free";
+        const planName =
+          userRole === "creator" ? "creator_free" : "student_free";
         const plan = await getPlanByName(planName);
 
         if (!plan) {
-          return reply.status(404).send({ error: "Plano gratuito não encontrado" });
+          return reply
+            .status(404)
+            .send({ error: "Plano gratuito não encontrado" });
         }
 
         const result = await createUserSubscription(userId, plan.id);
