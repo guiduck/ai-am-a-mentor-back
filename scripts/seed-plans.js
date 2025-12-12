@@ -39,7 +39,7 @@ const plans = [
     name: 'creator_basic',
     display_name: 'Básico',
     type: 'creator',
-    price: '29.00',
+    price: '1.00', // TEMP: R$1 para testes (era 29.00)
     billing_period: 'monthly',
     stripe_price_id: null, // Will be set after creating in Stripe
     features: JSON.stringify({
@@ -56,7 +56,7 @@ const plans = [
     name: 'creator_pro',
     display_name: 'Profissional',
     type: 'creator',
-    price: '69.00',
+    price: '1.00', // TEMP: R$1 para testes (era 69.00)
     billing_period: 'monthly',
     stripe_price_id: null, // Will be set after creating in Stripe
     features: JSON.stringify({
@@ -93,7 +93,7 @@ const plans = [
     name: 'student_family',
     display_name: 'Família',
     type: 'student',
-    price: '29.00',
+    price: '1.00', // TEMP: R$1 para testes (era 29.00)
     billing_period: 'monthly',
     stripe_price_id: null, // Will be set after creating in Stripe
     features: JSON.stringify({
