@@ -86,6 +86,13 @@ export async function quizRoutes(fastify: FastifyInstance) {
           request.body
         );
 
+        console.log("🧠 [Quiz Generate] Request received:", {
+          userId,
+          userRole,
+          videoId,
+          numQuestions,
+        });
+
         // Only creators can generate quizzes
         if (userRole !== "creator") {
           return reply.status(403).send({
@@ -95,6 +102,8 @@ export async function quizRoutes(fastify: FastifyInstance) {
 
         // Check if user is creator of this video
         const isOwner = await isCreatorOfVideo(userId, videoId);
+        console.log("🧠 [Quiz Generate] Is owner:", isOwner);
+
         if (!isOwner) {
           return reply.status(403).send({
             error: "Você só pode gerar quizzes para seus próprios vídeos",
@@ -106,6 +115,17 @@ export async function quizRoutes(fastify: FastifyInstance) {
           where: eq(videos.id, videoId),
         });
 
+        console.log(
+          "🧠 [Quiz Generate] Video found:",
+          video
+            ? {
+                id: video.id,
+                title: video.title,
+                courseId: video.courseId,
+              }
+            : null
+        );
+
         if (!video) {
           return reply.status(404).send({ error: "Vídeo não encontrado" });
         }
@@ -113,6 +133,12 @@ export async function quizRoutes(fastify: FastifyInstance) {
         // Check credits
         const creditCost = estimateQuizCreditCost(numQuestions);
         const currentCredits = await getUserCredits(userId);
+
+        console.log("🧠 [Quiz Generate] Credits check:", {
+          creditCost,
+          currentCredits,
+          hasEnough: currentCredits >= creditCost,
+        });
 
         if (currentCredits < creditCost) {
           return reply.status(402).send({
@@ -122,6 +148,8 @@ export async function quizRoutes(fastify: FastifyInstance) {
           });
         }
 
+        console.log("🧠 [Quiz Generate] Starting quiz generation...");
+
         // Generate quiz
         const result = await createQuizForVideo(
           videoId,
@@ -129,7 +157,18 @@ export async function quizRoutes(fastify: FastifyInstance) {
           numQuestions
         );
 
+        console.log(
+          "🧠 [Quiz Generate] Generation result:",
+          result
+            ? {
+                quizId: result.quizId,
+                questionsCount: result.questionsCount,
+              }
+            : null
+        );
+
         if (!result) {
+          console.error("🧠 [Quiz Generate] ❌ Failed to generate quiz");
           return reply.status(500).send({
             error:
               "Erro ao gerar quiz. Verifique se o vídeo possui transcrição.",

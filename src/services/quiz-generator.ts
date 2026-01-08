@@ -34,15 +34,26 @@ export async function generateQuizFromTranscript(
   numQuestions: number = 5
 ): Promise<GeneratedQuiz | null> {
   try {
+    console.log("📝 [Quiz Service] Searching transcript for video:", videoId);
+
     // Get transcript for the video
     const transcript = await db.query.transcripts.findFirst({
       where: eq(transcripts.videoId, videoId),
     });
 
+    console.log("📝 [Quiz Service] Transcript found:", transcript ? {
+      id: transcript.id,
+      videoId: transcript.videoId,
+      contentLength: transcript.content?.length || 0,
+      hasContent: !!transcript.content,
+    } : null);
+
     if (!transcript || !transcript.content) {
-      console.error("No transcript found for video:", videoId);
+      console.error("📝 [Quiz Service] ❌ No transcript found for video:", videoId);
       return null;
     }
+
+    console.log("📝 [Quiz Service] ✅ Transcript exists, generating quiz...");
 
     // Limit transcript size to avoid token limits
     const maxTranscriptLength = 8000;
@@ -78,7 +89,7 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem comen
 }`;
 
     console.log(
-      `Generating quiz for video ${videoId} with ${numQuestions} questions...`
+      `📝 [Quiz Service] Calling OpenAI for video ${videoId} with ${numQuestions} questions...`
     );
 
     const response = await openai.chat.completions.create({
@@ -99,8 +110,11 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem comen
     });
 
     const content = response.choices[0]?.message?.content;
+    
+    console.log("📝 [Quiz Service] OpenAI response received, length:", content?.length || 0);
+
     if (!content) {
-      console.error("No content in OpenAI response");
+      console.error("📝 [Quiz Service] ❌ No content in OpenAI response");
       return null;
     }
 
@@ -112,7 +126,11 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem comen
         .replace(/```\n?/g, "")
         .trim();
 
+      console.log("📝 [Quiz Service] Parsing JSON response...");
+
       const quiz: GeneratedQuiz = JSON.parse(cleanedContent);
+
+      console.log("📝 [Quiz Service] ✅ Quiz parsed successfully, questions:", quiz.questions?.length || 0);
 
       // Validate structure
       if (
@@ -120,7 +138,7 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem comen
         !Array.isArray(quiz.questions) ||
         quiz.questions.length === 0
       ) {
-        console.error("Invalid quiz structure: no questions");
+        console.error("📝 [Quiz Service] ❌ Invalid quiz structure: no questions");
         return null;
       }
 
@@ -134,20 +152,20 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem comen
           q.correctAnswer < 0 ||
           q.correctAnswer > 3
         ) {
-          console.error("Invalid question structure:", q);
+          console.error("📝 [Quiz Service] ❌ Invalid question structure:", q);
           return null;
         }
       }
 
-      console.log(`Successfully generated ${quiz.questions.length} questions`);
+      console.log(`📝 [Quiz Service] ✅ Successfully generated ${quiz.questions.length} questions`);
       return quiz;
-    } catch (parseError) {
-      console.error("Error parsing quiz JSON:", parseError);
-      console.error("Raw content:", content);
+    } catch (parseError: any) {
+      console.error("📝 [Quiz Service] ❌ Error parsing quiz JSON:", parseError.message);
+      console.error("📝 [Quiz Service] Raw content:", content?.substring(0, 200));
       return null;
     }
-  } catch (error) {
-    console.error("Error generating quiz:", error);
+  } catch (error: any) {
+    console.error("📝 [Quiz Service] ❌ Error generating quiz:", error.message);
     return null;
   }
 }
@@ -195,10 +213,10 @@ export async function saveQuizToDatabase(
       });
     }
 
-    console.log(`Quiz saved with ID: ${newQuiz.id}`);
+    console.log(`💾 [saveQuizToDatabase] ✅ Quiz saved with ID: ${newQuiz.id}`);
     return newQuiz.id;
-  } catch (error) {
-    console.error("Error saving quiz to database:", error);
+  } catch (error: any) {
+    console.error("💾 [saveQuizToDatabase] ❌ Error saving quiz to database:", error.message);
     return null;
   }
 }
@@ -211,6 +229,8 @@ export async function createQuizForVideo(
   videoTitle: string,
   numQuestions: number = 5
 ): Promise<{ quizId: string; questionsCount: number } | null> {
+  console.log("🎯 [createQuizForVideo] Starting:", { videoId, videoTitle, numQuestions });
+
   const generatedQuiz = await generateQuizFromTranscript(
     videoId,
     videoTitle,
@@ -218,14 +238,20 @@ export async function createQuizForVideo(
   );
 
   if (!generatedQuiz) {
+    console.error("🎯 [createQuizForVideo] ❌ Failed to generate quiz from transcript");
     return null;
   }
+
+  console.log("🎯 [createQuizForVideo] Quiz generated, saving to database...");
 
   const quizId = await saveQuizToDatabase(videoId, generatedQuiz);
 
   if (!quizId) {
+    console.error("🎯 [createQuizForVideo] ❌ Failed to save quiz to database");
     return null;
   }
+
+  console.log("🎯 [createQuizForVideo] ✅ Quiz created successfully:", { quizId, questionsCount: generatedQuiz.questions.length });
 
   return {
     quizId,
