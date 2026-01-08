@@ -195,6 +195,13 @@ export async function quizRoutes(fastify: FastifyInstance) {
         if (error instanceof z.ZodError) {
           return reply.status(400).send({ error: error.issues });
         }
+        if (error?.code === "DB_MIGRATION_MISSING") {
+          return reply.status(503).send({
+            error:
+              "O sistema de quizzes ainda está sendo configurado no servidor. Tente novamente em alguns minutos.",
+            code: "DB_MIGRATION_MISSING",
+          });
+        }
         return reply.status(500).send({ error: error.message });
       }
     },
@@ -300,6 +307,18 @@ export async function quizRoutes(fastify: FastifyInstance) {
         };
       } catch (error: any) {
         console.error("Error getting quiz:", error);
+        if (
+          error?.cause?.code === "42P01" ||
+          error?.code === "42P01" ||
+          (typeof error?.message === "string" &&
+            error.message.includes('relation "quizzes" does not exist'))
+        ) {
+          return reply.status(503).send({
+            error:
+              "O sistema de quizzes ainda está sendo configurado no servidor. Tente novamente em alguns minutos.",
+            code: "DB_MIGRATION_MISSING",
+          });
+        }
         return reply.status(500).send({ error: error.message });
       }
     },

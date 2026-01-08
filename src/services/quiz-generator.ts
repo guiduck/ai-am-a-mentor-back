@@ -41,15 +41,23 @@ export async function generateQuizFromTranscript(
       where: eq(transcripts.videoId, videoId),
     });
 
-    console.log("📝 [Quiz Service] Transcript found:", transcript ? {
-      id: transcript.id,
-      videoId: transcript.videoId,
-      contentLength: transcript.content?.length || 0,
-      hasContent: !!transcript.content,
-    } : null);
+    console.log(
+      "📝 [Quiz Service] Transcript found:",
+      transcript
+        ? {
+            id: transcript.id,
+            videoId: transcript.videoId,
+            contentLength: transcript.content?.length || 0,
+            hasContent: !!transcript.content,
+          }
+        : null
+    );
 
     if (!transcript || !transcript.content) {
-      console.error("📝 [Quiz Service] ❌ No transcript found for video:", videoId);
+      console.error(
+        "📝 [Quiz Service] ❌ No transcript found for video:",
+        videoId
+      );
       return null;
     }
 
@@ -110,8 +118,11 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem comen
     });
 
     const content = response.choices[0]?.message?.content;
-    
-    console.log("📝 [Quiz Service] OpenAI response received, length:", content?.length || 0);
+
+    console.log(
+      "📝 [Quiz Service] OpenAI response received, length:",
+      content?.length || 0
+    );
 
     if (!content) {
       console.error("📝 [Quiz Service] ❌ No content in OpenAI response");
@@ -130,7 +141,10 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem comen
 
       const quiz: GeneratedQuiz = JSON.parse(cleanedContent);
 
-      console.log("📝 [Quiz Service] ✅ Quiz parsed successfully, questions:", quiz.questions?.length || 0);
+      console.log(
+        "📝 [Quiz Service] ✅ Quiz parsed successfully, questions:",
+        quiz.questions?.length || 0
+      );
 
       // Validate structure
       if (
@@ -138,7 +152,9 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem comen
         !Array.isArray(quiz.questions) ||
         quiz.questions.length === 0
       ) {
-        console.error("📝 [Quiz Service] ❌ Invalid quiz structure: no questions");
+        console.error(
+          "📝 [Quiz Service] ❌ Invalid quiz structure: no questions"
+        );
         return null;
       }
 
@@ -157,11 +173,19 @@ Responda APENAS com um JSON válido no seguinte formato (sem markdown, sem comen
         }
       }
 
-      console.log(`📝 [Quiz Service] ✅ Successfully generated ${quiz.questions.length} questions`);
+      console.log(
+        `📝 [Quiz Service] ✅ Successfully generated ${quiz.questions.length} questions`
+      );
       return quiz;
     } catch (parseError: any) {
-      console.error("📝 [Quiz Service] ❌ Error parsing quiz JSON:", parseError.message);
-      console.error("📝 [Quiz Service] Raw content:", content?.substring(0, 200));
+      console.error(
+        "📝 [Quiz Service] ❌ Error parsing quiz JSON:",
+        parseError.message
+      );
+      console.error(
+        "📝 [Quiz Service] Raw content:",
+        content?.substring(0, 200)
+      );
       return null;
     }
   } catch (error: any) {
@@ -216,7 +240,26 @@ export async function saveQuizToDatabase(
     console.log(`💾 [saveQuizToDatabase] ✅ Quiz saved with ID: ${newQuiz.id}`);
     return newQuiz.id;
   } catch (error: any) {
-    console.error("💾 [saveQuizToDatabase] ❌ Error saving quiz to database:", error.message);
+    const pgCode = error?.cause?.code ?? error?.code;
+    const pgMessage = error?.cause?.message ?? error?.message;
+
+    // Postgres error 42P01 => undefined_table (e.g. missing migrations in production)
+    if (
+      pgCode === "42P01" ||
+      (typeof pgMessage === "string" &&
+        pgMessage.includes('relation "quizzes" does not exist'))
+    ) {
+      const migrationError = new Error(
+        "Banco de dados sem as tabelas de quiz (migrações pendentes)."
+      );
+      (migrationError as any).code = "DB_MIGRATION_MISSING";
+      throw migrationError;
+    }
+
+    console.error(
+      "💾 [saveQuizToDatabase] ❌ Error saving quiz to database:",
+      error.message
+    );
     return null;
   }
 }
@@ -229,7 +272,11 @@ export async function createQuizForVideo(
   videoTitle: string,
   numQuestions: number = 5
 ): Promise<{ quizId: string; questionsCount: number } | null> {
-  console.log("🎯 [createQuizForVideo] Starting:", { videoId, videoTitle, numQuestions });
+  console.log("🎯 [createQuizForVideo] Starting:", {
+    videoId,
+    videoTitle,
+    numQuestions,
+  });
 
   const generatedQuiz = await generateQuizFromTranscript(
     videoId,
@@ -238,7 +285,9 @@ export async function createQuizForVideo(
   );
 
   if (!generatedQuiz) {
-    console.error("🎯 [createQuizForVideo] ❌ Failed to generate quiz from transcript");
+    console.error(
+      "🎯 [createQuizForVideo] ❌ Failed to generate quiz from transcript"
+    );
     return null;
   }
 
@@ -251,7 +300,10 @@ export async function createQuizForVideo(
     return null;
   }
 
-  console.log("🎯 [createQuizForVideo] ✅ Quiz created successfully:", { quizId, questionsCount: generatedQuiz.questions.length });
+  console.log("🎯 [createQuizForVideo] ✅ Quiz created successfully:", {
+    quizId,
+    questionsCount: generatedQuiz.questions.length,
+  });
 
   return {
     quizId,
