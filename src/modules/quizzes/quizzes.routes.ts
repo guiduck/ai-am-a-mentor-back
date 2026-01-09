@@ -337,13 +337,6 @@ export async function quizRoutes(fastify: FastifyInstance) {
         const userRole = request.user.role;
         const { answers } = submitQuizSchema.parse(request.body);
 
-        // Only students can submit quizzes
-        if (userRole !== "student") {
-          return reply.status(403).send({
-            error: "Apenas alunos podem responder quizzes",
-          });
-        }
-
         // Get quiz with questions
         const quiz = await db.query.quizzes.findFirst({
           where: eq(quizzes.id, quizId),
@@ -363,12 +356,52 @@ export async function quizRoutes(fastify: FastifyInstance) {
           return reply.status(404).send({ error: "Quiz não encontrado" });
         }
 
-        // Check enrollment
-        const enrolled = await isEnrolledInCourse(userId, quiz.video.courseId);
-        if (!enrolled) {
+        const isOwner = quiz.video.course.creatorId === userId;
+        console.log("🧠 [Quiz Submit] Permission check:", {
+          quizId,
+          userId,
+          userRole,
+          courseCreatorId: quiz.video.course.creatorId,
+          isOwner,
+        });
+
+        // Permissions:
+        // - students must be enrolled
+        // - creators can submit only for their own video (test mode)
+        if (userRole === "student") {
+          const enrolled = await isEnrolledInCourse(
+            userId,
+            quiz.video.courseId
+          );
+          if (!enrolled) {
+            console.log("🧠 [Quiz Submit] Denied (not enrolled):", {
+              quizId,
+              userId,
+            });
+            return reply.status(403).send({
+              error:
+                "Você precisa estar matriculado no curso para responder o quiz",
+            });
+          }
+        } else if (userRole === "creator") {
+          if (!isOwner) {
+            console.log("🧠 [Quiz Submit] Denied (creator not owner):", {
+              quizId,
+              userId,
+              courseCreatorId: quiz.video.course.creatorId,
+            });
+            return reply.status(403).send({
+              error: "Você só pode testar quizzes dos seus próprios vídeos",
+            });
+          }
+        } else {
+          console.log("🧠 [Quiz Submit] Denied (invalid role):", {
+            quizId,
+            userId,
+            userRole,
+          });
           return reply.status(403).send({
-            error:
-              "Você precisa estar matriculado no curso para responder o quiz",
+            error: "Você não tem permissão para responder este quiz",
           });
         }
 
