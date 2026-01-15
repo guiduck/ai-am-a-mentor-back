@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { FastifyError } from "fastify";
 import { routes } from "./routes";
 import authPlugin from "./plugins/auth";
 
@@ -68,7 +68,7 @@ fastify.register(require("@fastify/cors"), {
 });
 
 // Global error handler for better logging
-fastify.setErrorHandler((error, request, reply) => {
+fastify.setErrorHandler((error: FastifyError, request, reply) => {
   console.error("❌ Global error handler triggered:");
   console.error("❌ Error name:", error.name);
   console.error("❌ Error message:", error.message);
@@ -89,19 +89,78 @@ fastify.setErrorHandler((error, request, reply) => {
   ) {
     console.error("❌ Body size limit exceeded!");
     return reply.status(413).send({
-      error:
-        "Request body too large. The transcription endpoint only accepts a videoId in JSON format. Videos are stored in R2 and downloaded server-side.",
       code: "BODY_TOO_LARGE",
-      suggestion:
-        "Ensure you're only sending { videoId: 'uuid' } in the request body.",
+      message:
+        "Corpo da requisicao muito grande. A transcricao aceita apenas um videoId em JSON.",
+      details: {
+        suggestion:
+          "Envie somente { videoId: 'uuid' } no corpo. Os videos ficam no R2.",
+      },
     });
   }
 
   // Default error response
-  reply.status(error.statusCode || 500).send({
-    error: error.message || "Internal server error",
-    code: error.code,
+  const statusCode = error.statusCode || 500;
+  const message =
+    statusCode >= 500
+      ? "Erro interno do servidor"
+      : error.message || "Requisicao invalida";
+
+  reply.status(statusCode).send({
+    code: error.code || "INTERNAL_ERROR",
+    message,
+    details: error.validation,
   });
+});
+
+// Normalize error responses to a single contract
+fastify.addHook("onSend", async (request, reply, payload) => {
+  if (reply.statusCode < 400) {
+    return payload;
+  }
+
+  const traceId = String(request.id);
+  let data: Record<string, unknown> = {};
+
+  if (payload && typeof payload === "object" && !Buffer.isBuffer(payload)) {
+    data = payload as Record<string, unknown>;
+  } else if (typeof payload === "string") {
+    try {
+      data = JSON.parse(payload) as Record<string, unknown>;
+    } catch {
+      data = { message: payload };
+    }
+  }
+
+  const message =
+    typeof data.message === "string"
+      ? data.message
+      : typeof data.error === "string"
+        ? data.error
+        : "Erro inesperado";
+  const code = typeof data.code === "string" ? data.code : "UNKNOWN_ERROR";
+  const details =
+    data.details ?? (typeof data.error === "string" ? data.error : undefined);
+
+  type NormalizedErrorPayload = Record<string, unknown> & {
+    code: string;
+    message: string;
+    details?: unknown;
+    traceId: string;
+    error?: unknown;
+  };
+
+  const normalized: NormalizedErrorPayload = {
+    ...data,
+    code,
+    message,
+    details,
+    traceId: typeof data.traceId === "string" ? data.traceId : traceId,
+  };
+
+  delete normalized.error;
+
+  return normalized;
 });
 
 fastify.register(authPlugin);

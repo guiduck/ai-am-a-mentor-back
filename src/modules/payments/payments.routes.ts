@@ -12,6 +12,7 @@ import {
   courses,
   enrollments,
   coursePurchases,
+  creatorTermsAcceptances,
 } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
 import {
@@ -28,13 +29,15 @@ import {
   getUserTransactions,
 } from "../../services/credits";
 import {
-  createConnectAccount,
-  createOnboardingLink,
   checkAccountStatus,
   createCoursePaymentWithSplit,
-  getCreatorDashboardLink,
-  getCreatorBalance,
+  calculateSplitAmounts,
 } from "../../services/stripe-connect";
+import { getCreatorCommissionRate } from "../../services/subscriptions";
+import {
+  CREATOR_TERMS,
+  getCreatorTermsAcceptance,
+} from "../../services/creator-terms";
 
 // ============================================================================
 // Validation Schemas
@@ -50,16 +53,11 @@ const createCreditsPaymentSchema = z.object({
 
 const createCoursePaymentSchema = z.object({
   courseId: z.string().uuid(),
-  amount: z.number().positive().min(0.01),
   paymentMethod: paymentMethodSchema,
 });
 
 const confirmPaymentSchema = z.object({
   paymentIntentId: z.string().min(1),
-});
-
-const purchaseWithCreditsSchema = z.object({
-  courseId: z.string().uuid(),
 });
 
 // ============================================================================
@@ -77,6 +75,18 @@ function handleValidationError(reply: any, error: any) {
     });
   }
   throw error;
+}
+
+/**
+ * Resolve the client IP address from headers or socket.
+ */
+function resolveRequestIp(request: any): string {
+  const forwardedFor = request.headers["x-forwarded-for"];
+  if (typeof forwardedFor === "string" && forwardedFor.trim()) {
+    return forwardedFor.split(",")[0].trim();
+  }
+
+  return request.ip || request.socket?.remoteAddress || "0.0.0.0";
 }
 
 /**
@@ -118,6 +128,17 @@ async function createEnrollment(userId: string, courseId: string) {
     studentId: userId,
     courseId,
   });
+}
+
+/**
+ * Parse and validate course price.
+ */
+function parseCoursePrice(price: string): number | null {
+  const parsed = parseFloat(price);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
 }
 
 // ============================================================================
@@ -169,12 +190,101 @@ export async function paymentRoutes(fastify: FastifyInstance) {
   });
 
   // --------------------------------------------------------------------------
+  // Creator Terms Routes
+  // --------------------------------------------------------------------------
+
+  /**
+   * GET /payments/creator-terms - Get creator terms and acceptance status
+   */
+  fastify.get("/payments/creator-terms", {
+    preHandler: [fastify.authenticate],
+    handler: async (request, reply) => {
+      try {
+        if (request.user.role !== "creator") {
+          return reply.status(403).send({
+            error: "Apenas criadores podem acessar os termos de venda",
+          });
+        }
+
+        const acceptance = await getCreatorTermsAcceptance(request.user.id);
+
+        return {
+          version: CREATOR_TERMS.version,
+          title: CREATOR_TERMS.title,
+          items: CREATOR_TERMS.items,
+          accepted: !!acceptance,
+          acceptedAt: acceptance?.acceptedAt || null,
+        };
+      } catch (error: any) {
+        console.error("Error getting creator terms:", error);
+        return reply.status(500).send({
+          error: "Falha ao obter termos de venda",
+        });
+      }
+    },
+  });
+
+  /**
+   * POST /payments/creator-terms/accept - Accept creator terms
+   */
+  fastify.post("/payments/creator-terms/accept", {
+    preHandler: [fastify.authenticate],
+    handler: async (request, reply) => {
+      try {
+        if (request.user.role !== "creator") {
+          return reply.status(403).send({
+            error: "Apenas criadores podem aceitar os termos de venda",
+          });
+        }
+
+        const schema = z.object({
+          version: z.string().optional(),
+        });
+        const { version } = schema.parse(request.body || {});
+
+        if (version && version !== CREATOR_TERMS.version) {
+          return reply.status(400).send({
+            error: "Versão dos termos inválida",
+          });
+        }
+
+        const existing = await getCreatorTermsAcceptance(request.user.id);
+        if (existing) {
+          return {
+            accepted: true,
+            version: CREATOR_TERMS.version,
+            acceptedAt: existing.acceptedAt,
+          };
+        }
+
+        const acceptedIp = resolveRequestIp(request);
+        const acceptedAt = new Date();
+
+        await db.insert(creatorTermsAcceptances).values({
+          creatorId: request.user.id,
+          termsVersion: CREATOR_TERMS.version,
+          acceptedIp,
+          acceptedAt,
+        });
+
+        return {
+          accepted: true,
+          version: CREATOR_TERMS.version,
+          acceptedAt,
+        };
+      } catch (error: any) {
+        return handleValidationError(reply, error);
+      }
+    },
+  });
+
+  // --------------------------------------------------------------------------
   // Payment Intent Routes
   // --------------------------------------------------------------------------
 
   /**
    * POST /payments/credits/create-intent - Create payment intent for credits
-   * Supports both card and PIX payments
+   * Supports both card and boleto payments
    */
   fastify.post("/payments/credits/create-intent", {
     preHandler: [fastify.authenticate],
@@ -201,7 +311,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           });
         }
 
-        // Create payment intent with specified method (card or pix)
+        // Create payment intent with specified method (card or boleto)
         const result = await createCreditsPaymentIntent(
           amount,
           userId,
@@ -224,7 +334,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           status: "pending",
           creditsAwarded: creditsAmount,
           paymentType: "credits",
-          metadata: { paymentMethod },
+          metadata: JSON.stringify({ paymentMethod }),
         });
 
         return {
@@ -246,20 +356,27 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
   /**
    * POST /payments/course/create-intent - Create payment intent for course
-   * Supports both card and PIX payments
+   * Supports both card and boleto payments
    */
   fastify.post("/payments/course/create-intent", {
     preHandler: [fastify.authenticate],
     handler: async (request, reply) => {
       try {
         const userId = request.user.id;
-        const { courseId, amount, paymentMethod } =
+        const { courseId, paymentMethod } =
           createCoursePaymentSchema.parse(request.body);
 
         // Verify course exists
         const course = await getCourseById(courseId);
         if (!course) {
           return reply.status(404).send({ error: "Curso não encontrado" });
+        }
+
+        const coursePrice = parseCoursePrice(course.price);
+        if (!coursePrice) {
+          return reply.status(400).send({
+            error: "Cursos gratuitos não estão disponíveis no MVP",
+          });
         }
 
         // Get user
@@ -275,6 +392,19 @@ export async function paymentRoutes(fastify: FastifyInstance) {
             .send({ error: "Você já está inscrito neste curso" });
         }
 
+        const creator = await getUserById(course.creatorId);
+        if (!creator) {
+          return reply.status(404).send({ error: "Criador não encontrado" });
+        }
+
+        const termsAcceptance = await getCreatorTermsAcceptance(creator.id);
+        if (!termsAcceptance) {
+          return reply.status(400).send({
+            error:
+              "O criador deste curso ainda não aceitou os termos de venda",
+          });
+        }
+
         // Get or create Stripe customer
         const { customerId, error: customerError } = await getOrCreateCustomer(
           userId,
@@ -286,18 +416,74 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           });
         }
 
-        // Create payment intent with specified method (card or pix)
-        const result = await createCoursePaymentIntent(
-          amount,
-          userId,
-          courseId,
-          paymentMethod
+        const commissionRate = await getCreatorCommissionRate(creator.id);
+        const splitAmounts = calculateSplitAmounts(
+          coursePrice,
+          commissionRate
         );
+        let payoutStatus: "split" | "pending_onboarding" = "pending_onboarding";
+        let result:
+          | {
+              clientSecret: string;
+              paymentIntentId: string;
+              platformFee: number;
+              creatorAmount: number;
+              boletoUrl?: string;
+              boletoNumber?: string;
+              boletoExpiresAt?: number;
+              error?: string;
+            }
+          | undefined;
 
-        if (result.error || !result.clientSecret) {
-          return reply.status(500).send({
-            error: result.error || "Falha ao criar intenção de pagamento",
-          });
+        if (creator.stripeAccountId) {
+          const accountStatus = await checkAccountStatus(
+            creator.stripeAccountId
+          );
+
+          if (accountStatus.isComplete) {
+            const splitResult = await createCoursePaymentWithSplit(
+              coursePrice,
+              userId,
+              courseId,
+              creator.stripeAccountId,
+              commissionRate,
+              paymentMethod,
+              customerId
+            );
+            if (splitResult.error || !splitResult.clientSecret) {
+              return reply.status(500).send({
+                error: splitResult.error || "Falha ao criar pagamento",
+              });
+            }
+
+            result = splitResult;
+            payoutStatus = "split";
+          }
+        }
+
+        if (!result) {
+          const intentResult = await createCoursePaymentIntent(
+            coursePrice,
+            userId,
+            courseId,
+            paymentMethod
+          );
+
+          if (intentResult.error || !intentResult.clientSecret) {
+            return reply.status(500).send({
+              error: intentResult.error || "Falha ao criar intenção de pagamento",
+            });
+          }
+
+          result = {
+            clientSecret: intentResult.clientSecret,
+            paymentIntentId: intentResult.paymentIntentId,
+            platformFee: splitAmounts.platformFee,
+            creatorAmount: splitAmounts.creatorAmount,
+            boletoUrl: intentResult.boletoUrl,
+            boletoNumber: intentResult.boletoNumber,
+            boletoExpiresAt: intentResult.boletoExpiresAt,
+          };
         }
 
         // Save payment record
@@ -305,19 +491,30 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           userId,
           stripePaymentIntentId: result.paymentIntentId,
           stripeCustomerId: customerId,
-          amount: amount.toString(),
+          amount: coursePrice.toString(),
           status: "pending",
           paymentType: "course",
           courseId,
-          metadata: { paymentMethod },
+          metadata: JSON.stringify({
+            paymentMethod,
+            platformFee: splitAmounts.platformFee,
+            creatorAmount: splitAmounts.creatorAmount,
+            commissionRate,
+            payoutStatus,
+            creatorId: creator.id,
+            creatorStripeAccountId: creator.stripeAccountId || null,
+          }),
         });
 
         return {
           clientSecret: result.clientSecret,
           paymentIntentId: result.paymentIntentId,
-          amount,
+          amount: coursePrice,
           courseId,
           paymentMethod,
+          platformFee: result.platformFee,
+          creatorAmount: result.creatorAmount,
+          payoutStatus,
           // Boleto specific data
           boletoUrl: result.boletoUrl,
           boletoNumber: result.boletoNumber,
@@ -492,7 +689,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
         if (!process.env.STRIPE_WEBHOOK_SECRET) {
           console.error("STRIPE_WEBHOOK_SECRET not configured");
-          return reply.status(500).send({ error: "Webhook not configured" });
+        return reply.status(500).send({ error: "Webhook nao configurado" });
         }
 
         // Verify webhook signature

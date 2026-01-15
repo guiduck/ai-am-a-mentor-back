@@ -22,6 +22,17 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Creator Terms Acceptances - Registro de aceite de termos de venda
+export const creatorTermsAcceptances = pgTable("creator_terms_acceptances", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  creatorId: uuid("creator_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  termsVersion: varchar("terms_version", { length: 50 }).notNull(),
+  acceptedIp: varchar("accepted_ip", { length: 45 }).notNull(),
+  acceptedAt: timestamp("accepted_at").defaultNow().notNull(),
+});
+
 export const courses = pgTable("courses", {
   id: uuid("id").defaultRandom().primaryKey(),
   title: varchar("title", { length: 255 }).notNull(),
@@ -208,6 +219,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   transactions: many(transactions),
   payments: many(payments),
   coursePurchases: many(coursePurchases),
+  creatorTermsAcceptances: many(creatorTermsAcceptances),
 }));
 
 export const coursesRelations = relations(courses, ({ one, many }) => ({
@@ -282,6 +294,16 @@ export const paymentsRelations = relations(payments, ({ one }) => ({
     references: [courses.id],
   }),
 }));
+
+export const creatorTermsAcceptancesRelations = relations(
+  creatorTermsAcceptances,
+  ({ one }) => ({
+    creator: one(users, {
+      fields: [creatorTermsAcceptances.creatorId],
+      references: [users.id],
+    }),
+  })
+);
 
 export const coursePurchasesRelations = relations(
   coursePurchases,

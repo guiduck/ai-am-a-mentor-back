@@ -21,7 +21,7 @@ const loginCreatorSchema = z.object({
 const createCourseSchema = z.object({
   title: z.string(),
   description: z.string(),
-  price: z.number(),
+  price: z.number().positive().min(0.01),
   tags: z.array(z.string()).optional().default([]),
 });
 
@@ -39,7 +39,7 @@ export async function creatorRoutes(fastify: FastifyInstance) {
 
       if (existingUserByEmail) {
         return reply.status(409).send({
-          message: "User with this email already exists",
+          message: "Ja existe um usuario com este email",
         });
       }
 
@@ -50,7 +50,7 @@ export async function creatorRoutes(fastify: FastifyInstance) {
 
       if (existingUserByUsername) {
         return reply.status(409).send({
-          message: "Username already taken",
+          message: "Nome de usuario ja em uso",
         });
       }
 
@@ -68,7 +68,7 @@ export async function creatorRoutes(fastify: FastifyInstance) {
 
       return reply
         .status(201)
-        .send({ message: "Creator created successfully", user: newUser[0] });
+        .send({ message: "Conta de criador criada com sucesso", user: newUser[0] });
     } catch (error: any) {
       // Log detailed error information
       fastify.log.error(
@@ -95,12 +95,12 @@ export async function creatorRoutes(fastify: FastifyInstance) {
         // PostgreSQL unique violation
         if (error.constraint === "users_email_unique") {
           return reply.status(409).send({
-            message: "User with this email already exists",
+            message: "Ja existe um usuario com este email",
           });
         }
         if (error.constraint === "users_username_unique") {
           return reply.status(409).send({
-            message: "Username already taken",
+            message: "Nome de usuario ja em uso",
           });
         }
       }
@@ -120,16 +120,19 @@ export async function creatorRoutes(fastify: FastifyInstance) {
         );
 
         return reply.status(500).send({
-          message: "Database error. Please check if migrations are up to date.",
-          error: error.message,
-          query: error.query,
-          params: error.params,
+          message:
+            "Erro no banco de dados. Verifique se as migrations estao atualizadas.",
+          details: {
+            error: error.message,
+            query: error.query,
+            params: error.params,
+          },
         });
       }
 
       return reply.status(500).send({
-        message: "Failed to create creator account",
-        error: error.message,
+        message: "Falha ao criar conta de criador",
+        details: error.message,
         code: error.code,
       });
     }
@@ -143,13 +146,13 @@ export async function creatorRoutes(fastify: FastifyInstance) {
     });
 
     if (!user) {
-      return reply.status(401).send({ message: "Invalid credentials" });
+      return reply.status(401).send({ message: "Credenciais invalidas" });
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
     if (!isPasswordValid) {
-      return reply.status(401).send({ message: "Invalid credentials" });
+      return reply.status(401).send({ message: "Credenciais invalidas" });
     }
 
     const token = jwt.sign(
@@ -203,7 +206,7 @@ export async function creatorRoutes(fastify: FastifyInstance) {
       };
 
       return reply.status(201).send({
-        message: "Course created successfully",
+        message: "Curso criado com sucesso",
         course: courseWithTags,
       });
     }
@@ -239,7 +242,7 @@ export async function creatorRoutes(fastify: FastifyInstance) {
       };
 
       return {
-        message: "Course updated successfully",
+        message: "Curso atualizado com sucesso",
         course: courseWithTags,
       };
     }
@@ -256,7 +259,7 @@ export async function creatorRoutes(fastify: FastifyInstance) {
       });
 
       if (!course) {
-        return reply.status(404).send({ message: "Course not found" });
+        return reply.status(404).send({ message: "Curso nao encontrado" });
       }
 
       // Parse tags from JSON string to array
@@ -286,13 +289,13 @@ export async function creatorRoutes(fastify: FastifyInstance) {
       });
 
       if (!course) {
-        return reply.status(404).send({ message: "Course not found" });
+        return reply.status(404).send({ message: "Curso nao encontrado" });
       }
 
       if (course.creatorId !== creatorId) {
         return reply
           .status(403)
-          .send({ message: "You can only delete your own courses" });
+          .send({ message: "Voce so pode deletar seus proprios cursos" });
       }
 
       // Delete all video files from R2 before deleting the course
@@ -312,7 +315,7 @@ export async function creatorRoutes(fastify: FastifyInstance) {
       // Delete the course (videos will be deleted by CASCADE)
       await db.delete(courses).where(eq(courses.id, courseId));
 
-      return { message: "Course deleted successfully" };
+      return { message: "Curso deletado com sucesso" };
     }
   );
 

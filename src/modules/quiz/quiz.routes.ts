@@ -8,7 +8,10 @@ import { z } from "zod";
 import { db } from "../../db";
 import { quizzes, quizQuestions, quizAttempts, videos, courses } from "../../db/schema";
 import { eq, and } from "drizzle-orm";
-import { generateQuizForVideo, getQuizGenerationCost } from "../../services/quiz-generator";
+import {
+  createQuizForVideo,
+  estimateQuizCreditCost,
+} from "../../services/quiz-generator";
 
 export async function quizRoutes(fastify: FastifyInstance) {
   // ==========================================================================
@@ -51,17 +54,24 @@ export async function quizRoutes(fastify: FastifyInstance) {
         }
 
         // Generate quiz
-        const result = await generateQuizForVideo(videoId, userId, numberOfQuestions);
+        const result = await createQuizForVideo(
+          videoId,
+          video.title,
+          numberOfQuestions
+        );
 
-        if (!result.success) {
-          return reply.status(400).send({ error: result.error });
+        if (!result) {
+          return reply.status(500).send({
+            error:
+              "Erro ao gerar quiz. Verifique se o vídeo possui transcrição.",
+          });
         }
 
         return {
           message: "Quiz gerado com sucesso!",
           quizId: result.quizId,
           questionsCount: result.questionsCount,
-          creditsUsed: result.creditsUsed,
+          creditsUsed: estimateQuizCreditCost(numberOfQuestions),
         };
       } catch (error: any) {
         console.error("Error generating quiz:", error);
@@ -75,7 +85,7 @@ export async function quizRoutes(fastify: FastifyInstance) {
    */
   fastify.get("/quiz/cost", {
     handler: async () => {
-      return { cost: getQuizGenerationCost() };
+      return { cost: estimateQuizCreditCost() };
     },
   });
 
@@ -450,4 +460,3 @@ export async function quizRoutes(fastify: FastifyInstance) {
     },
   });
 }
-

@@ -9,7 +9,7 @@ let openaiClient: OpenAI | null = null;
 
 function getOpenAIClient(): OpenAI {
   if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY not configured");
+    throw new Error("OPENAI_API_KEY nao configurada");
   }
 
   if (!openaiClient) {
@@ -79,11 +79,10 @@ IMPORTANTE: Baseie suas respostas exclusivamente na transcrição fornecida. Se 
     console.error("❌ AI chat error:", error);
     return {
       response: "",
-      error: error.message || "Failed to generate AI response",
+      error: error.message || "Falha ao gerar resposta da IA",
     };
   }
 }
-
 
 
 

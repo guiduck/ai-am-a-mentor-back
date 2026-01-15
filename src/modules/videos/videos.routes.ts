@@ -75,7 +75,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         // Handle multipart form data
         const data = await request.file();
         if (!data) {
-          return reply.status(400).send({ error: "No file uploaded" });
+          return reply.status(400).send({ error: "Nenhum arquivo enviado" });
         }
 
         const { filename, mimetype } = data;
@@ -87,8 +87,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
         // Check if R2 is configured
         if (!isR2Configured()) {
           return reply.status(500).send({
-            error: "Cloudflare R2 not configured",
-            message: "Please configure Cloudflare R2 environment variables",
+            error: "Cloudflare R2 nao configurado",
+            message: "Configure as variaveis de ambiente do Cloudflare R2",
           });
         }
 
@@ -96,7 +96,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         const success = await uploadFileToR2(key, buffer, mimetype);
 
         if (!success) {
-          return reply.status(500).send({ error: "Failed to upload to R2" });
+          return reply.status(500).send({ error: "Falha ao enviar para o R2" });
         }
 
         return {
@@ -104,11 +104,11 @@ export async function videoRoutes(fastify: FastifyInstance) {
           filename,
           contentType: mimetype,
           size: buffer.length,
-          message: "Upload successful",
+          message: "Upload realizado com sucesso",
         };
       } catch (error) {
         console.error("Direct upload failed:", error);
-        return reply.status(500).send({ error: "Upload failed" });
+        return reply.status(500).send({ error: "Falha no upload" });
       }
     },
   });
@@ -121,8 +121,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
         // Check if Cloudflare R2 is configured
         if (!isR2Configured()) {
           return reply.status(500).send({
-            error: "Cloudflare R2 not configured",
-            message: "Please configure Cloudflare R2 environment variables",
+            error: "Cloudflare R2 nao configurado",
+            message: "Configure as variaveis de ambiente do Cloudflare R2",
           });
         }
 
@@ -143,7 +143,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         console.error("Upload URL generation failed:", error);
         return reply
           .status(500)
-          .send({ error: "Failed to generate upload URL" });
+          .send({ error: "Falha ao gerar URL de upload" });
       }
     },
   });
@@ -167,7 +167,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         console.log("📥 User ID:", userId);
 
         if (!process.env.OPENAI_API_KEY) {
-          return reply.status(500).send({ error: "OpenAI not configured" });
+          return reply.status(500).send({ error: "OpenAI nao configurado" });
         }
 
         // 1. Get video from database
@@ -179,7 +179,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         });
 
         if (!video) {
-          return reply.status(404).send({ error: "Video not found" });
+          return reply.status(404).send({ error: "Video nao encontrado" });
         }
 
         // 2. Check if user has access (creator or enrolled student)
@@ -193,7 +193,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
         if (!isCreator && !isEnrolled) {
           return reply.status(403).send({
-            error: "You don't have access to this video",
+            error: "Voce nao tem acesso a este video",
           });
         }
 
@@ -204,7 +204,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
         if (existingTranscript) {
           return {
-            message: "Transcript already exists",
+            message: "Transcricao ja existe",
             transcript: existingTranscript.content,
             videoId,
           };
@@ -217,7 +217,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
         // Return immediately and process in background
         reply.status(202).send({
-          message: "Transcription started. This may take a few minutes.",
+          message: "Transcricao iniciada. Isso pode levar alguns minutos.",
           videoId,
           status: "processing",
         });
@@ -317,7 +317,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         }
 
         return reply.status(500).send({
-          error: error.message || "Failed to transcribe video",
+          error: error.message || "Falha ao transcrever video",
         });
       }
     },
@@ -340,7 +340,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         });
 
         if (!video) {
-          return reply.status(404).send({ error: "Video not found" });
+          return reply.status(404).send({ error: "Video nao encontrado" });
         }
 
         const isCreator = video.course.creatorId === userId;
@@ -353,7 +353,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
         if (!isCreator && !isEnrolled) {
           return reply.status(403).send({
-            error: "You don't have access to this video",
+            error: "Voce nao tem acesso a este video",
           });
         }
 
@@ -364,7 +364,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
         if (!transcript) {
           return reply.status(404).send({
-            error: "Transcript not found. Please transcribe the video first.",
+            error: "Transcricao nao encontrada. Transcreva o video primeiro.",
           });
         }
 
@@ -377,7 +377,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
       } catch (error: any) {
         console.error("Error fetching transcript:", error);
         return reply.status(500).send({
-          error: error.message || "Failed to fetch transcript",
+          error: error.message || "Falha ao buscar transcricao",
         });
       }
     },
@@ -392,7 +392,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         const userId = request.user.id;
 
         if (!process.env.OPENAI_API_KEY) {
-          return reply.status(500).send({ error: "OpenAI not configured" });
+          return reply.status(500).send({ error: "OpenAI nao configurado" });
         }
 
         // 1. Get video and check access
@@ -404,7 +404,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         });
 
         if (!video) {
-          return reply.status(404).send({ error: "Video not found" });
+          return reply.status(404).send({ error: "Video nao encontrado" });
         }
 
         const isCreator = video.course.creatorId === userId;
@@ -417,7 +417,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
         if (!isCreator && !isEnrolled) {
           return reply.status(403).send({
-            error: "You don't have access to this video",
+            error: "Voce nao tem acesso a este video",
           });
         }
 
@@ -439,7 +439,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         if (!transcript) {
           console.error("❌ Transcript not found for video:", videoId);
           return reply.status(404).send({
-            error: "Transcript not found. Please transcribe the video first.",
+            error: "Transcricao nao encontrada. Transcreva o video primeiro.",
           });
         }
 
@@ -455,7 +455,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
         if (error || !response) {
           return reply.status(500).send({
-            error: error || "Failed to generate AI response",
+            error: error || "Falha ao gerar resposta da IA",
           });
         }
 
@@ -467,7 +467,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
       } catch (error: any) {
         console.error("AI chat error:", error);
         return reply.status(500).send({
-          error: error.message || "Failed to process chat request",
+          error: error.message || "Falha ao processar solicitacao de chat",
         });
       }
     },
@@ -489,13 +489,13 @@ export async function videoRoutes(fastify: FastifyInstance) {
         });
 
         if (!course) {
-          return reply.status(404).send({ message: "Course not found" });
+          return reply.status(404).send({ message: "Curso nao encontrado" });
         }
 
         if (course.creatorId !== creatorId) {
           return reply
             .status(403)
-            .send({ message: "You can only add videos to your own courses" });
+            .send({ message: "Voce so pode adicionar videos aos seus proprios cursos" });
         }
 
         // Check if course already has 500 videos (limit)
@@ -506,7 +506,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         if (videoCount.length >= 500) {
           return reply
             .status(400)
-            .send({ message: "Course has reached maximum of 500 videos" });
+            .send({ message: "Curso atingiu o limite de 500 videos" });
         }
 
         // Calculate credit cost if duration is provided
@@ -518,7 +518,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
           const balance = await getUserCredits(creatorId);
           if (balance < creditCost) {
             return reply.status(402).send({
-              error: "Insufficient credits",
+              error: "Creditos insuficientes",
               required: creditCost,
               current: balance,
               message: `You need ${creditCost} credits to upload this video (${Math.ceil(
@@ -553,7 +553,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
             // Rollback: delete the video
             await db.delete(videos).where(eq(videos.id, newVideo[0].id));
             return reply.status(500).send({
-              error: "Failed to deduct credits",
+              error: "Falha ao debitar creditos",
               message:
                 deductResult.error ||
                 "An error occurred while processing credits",
@@ -561,7 +561,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
           }
 
           return reply.status(201).send({
-            message: "Video created successfully",
+            message: "Video criado com sucesso",
             video: newVideo[0],
             creditsUsed: creditCost,
             newBalance: deductResult.newBalance,
@@ -569,12 +569,12 @@ export async function videoRoutes(fastify: FastifyInstance) {
         }
 
         return reply.status(201).send({
-          message: "Video created successfully",
+          message: "Video criado com sucesso",
           video: newVideo[0],
         });
       } catch (error) {
         console.error("Error creating video:", error);
-        return reply.status(500).send({ message: "Failed to create video" });
+        return reply.status(500).send({ message: "Falha ao criar video" });
       }
     },
   });
@@ -594,14 +594,14 @@ export async function videoRoutes(fastify: FastifyInstance) {
         });
 
         if (!course) {
-          return reply.status(404).send({ message: "Course not found" });
+          return reply.status(404).send({ message: "Curso nao encontrado" });
         }
 
         // If user is a creator, they can only see videos from their own courses
         // If user is a student, they can only see videos from courses they're enrolled in
         if (userRole === "creator" && course.creatorId !== userId) {
           return reply.status(403).send({
-            message: "You can only view videos from your own courses",
+            message: "Voce so pode visualizar videos dos seus proprios cursos",
           });
         }
 
@@ -616,7 +616,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
           if (!enrollment) {
             return reply.status(403).send({
-              message: "You must be enrolled in this course to view videos",
+              message: "Voce precisa estar matriculado neste curso para ver videos",
             });
           }
         }
@@ -629,7 +629,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         return courseVideos;
       } catch (error) {
         console.error("Error fetching course videos:", error);
-        return reply.status(500).send({ message: "Failed to fetch videos" });
+        return reply.status(500).send({ message: "Falha ao buscar videos" });
       }
     },
   });
@@ -652,13 +652,13 @@ export async function videoRoutes(fastify: FastifyInstance) {
         });
 
         if (!video) {
-          return reply.status(404).send({ message: "Video not found" });
+          return reply.status(404).send({ message: "Video nao encontrado" });
         }
 
         // Check access permissions
         if (userRole === "creator" && video.course.creatorId !== userId) {
           return reply.status(403).send({
-            message: "You can only access videos from your own courses",
+            message: "Voce so pode acessar videos dos seus proprios cursos",
           });
         }
 
@@ -673,7 +673,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
           if (!enrollment) {
             return reply.status(403).send({
-              message: "You must be enrolled in this course to view this video",
+              message: "Voce precisa estar matriculado neste curso para ver este video",
             });
           }
         }
@@ -681,7 +681,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         return video;
       } catch (error) {
         console.error("Error fetching video:", error);
-        return reply.status(500).send({ message: "Failed to fetch video" });
+        return reply.status(500).send({ message: "Falha ao buscar video" });
       }
     },
   });
@@ -704,13 +704,13 @@ export async function videoRoutes(fastify: FastifyInstance) {
         });
 
         if (!video) {
-          return reply.status(404).send({ message: "Video not found" });
+          return reply.status(404).send({ message: "Video nao encontrado" });
         }
 
         // Check if the creator owns this course
         if (video.course.creatorId !== creatorId) {
           return reply.status(403).send({
-            message: "You can only update videos from your own courses",
+            message: "Voce so pode atualizar videos dos seus proprios cursos",
           });
         }
 
@@ -727,12 +727,12 @@ export async function videoRoutes(fastify: FastifyInstance) {
           .returning();
 
         return {
-          message: "Video updated successfully",
+          message: "Video atualizado com sucesso",
           video: updatedVideo[0],
         };
       } catch (error) {
         console.error("Error updating video:", error);
-        return reply.status(500).send({ message: "Failed to update video" });
+        return reply.status(500).send({ message: "Falha ao atualizar video" });
       }
     },
   });
@@ -754,13 +754,13 @@ export async function videoRoutes(fastify: FastifyInstance) {
         });
 
         if (!video) {
-          return reply.status(404).send({ message: "Video not found" });
+          return reply.status(404).send({ message: "Video nao encontrado" });
         }
 
         // Check if the creator owns this course
         if (video.course.creatorId !== creatorId) {
           return reply.status(403).send({
-            message: "You can only delete videos from your own courses",
+            message: "Voce so pode deletar videos dos seus proprios cursos",
           });
         }
 
@@ -777,10 +777,10 @@ export async function videoRoutes(fastify: FastifyInstance) {
         // Delete the video (transcripts will be deleted by CASCADE)
         await db.delete(videos).where(eq(videos.id, videoId));
 
-        return { message: "Video deleted successfully" };
+        return { message: "Video deletado com sucesso" };
       } catch (error) {
         console.error("Error deleting video:", error);
-        return reply.status(500).send({ message: "Failed to delete video" });
+        return reply.status(500).send({ message: "Falha ao deletar video" });
       }
     },
   });
@@ -803,13 +803,13 @@ export async function videoRoutes(fastify: FastifyInstance) {
         });
 
         if (!video) {
-          return reply.status(404).send({ message: "Video not found" });
+          return reply.status(404).send({ message: "Video nao encontrado" });
         }
 
         // Check access permissions
         if (userRole === "creator" && video.course.creatorId !== userId) {
           return reply.status(403).send({
-            message: "You can only access videos from your own courses",
+            message: "Voce so pode acessar videos dos seus proprios cursos",
           });
         }
 
@@ -824,7 +824,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
           if (!enrollment) {
             return reply.status(403).send({
-              message: "You must be enrolled in this course to view this video",
+              message: "Voce precisa estar matriculado neste curso para ver este video",
             });
           }
         }
@@ -832,8 +832,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
         // Check if R2 is configured
         if (!isR2Configured()) {
           return reply.status(500).send({
-            error: "Cloudflare R2 not configured",
-            message: "Video streaming is not available",
+            error: "Cloudflare R2 nao configurado",
+            message: "Streaming de video nao disponivel",
           });
         }
 
@@ -852,7 +852,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         console.error("Error generating stream URL:", error);
         return reply
           .status(500)
-          .send({ message: "Failed to generate stream URL" });
+          .send({ message: "Falha ao gerar URL de streaming" });
       }
     },
   });
@@ -875,13 +875,13 @@ export async function videoRoutes(fastify: FastifyInstance) {
         });
 
         if (!video) {
-          return reply.status(404).send({ message: "Video not found" });
+          return reply.status(404).send({ message: "Video nao encontrado" });
         }
 
         // Check access permissions
         if (userRole === "creator" && video.course.creatorId !== userId) {
           return reply.status(403).send({
-            message: "You can only access videos from your own courses",
+            message: "Voce so pode acessar videos dos seus proprios cursos",
           });
         }
 
@@ -896,7 +896,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
           if (!enrollment) {
             return reply.status(403).send({
-              message: "You must be enrolled in this course to view this video",
+              message: "Voce precisa estar matriculado neste curso para ver este video",
             });
           }
         }
@@ -904,8 +904,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
         // Check if R2 is configured
         if (!isR2Configured()) {
           return reply.status(500).send({
-            error: "Cloudflare R2 not configured",
-            message: "Video streaming is not available",
+            error: "Cloudflare R2 nao configurado",
+            message: "Streaming de video nao disponivel",
           });
         }
 
@@ -927,7 +927,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
             hasBody: !!fileStream?.Body,
           });
           return reply.status(404).send({
-            message: "Video file not found in R2",
+            message: "Arquivo de video nao encontrado no R2",
             r2Key: video.r2Key,
           });
         }
@@ -1051,7 +1051,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         }
       } catch (error) {
         console.error("Error streaming video:", error);
-        return reply.status(500).send({ message: "Failed to stream video" });
+        return reply.status(500).send({ message: "Falha ao transmitir video" });
       }
     },
   });
@@ -1073,7 +1073,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         });
 
         if (!video) {
-          return reply.status(404).send({ error: "Video not found" });
+          return reply.status(404).send({ error: "Video nao encontrado" });
         }
 
         const isCreator = video.course.creatorId === userId;
@@ -1086,7 +1086,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
         if (!isCreator && !isEnrolled) {
           return reply.status(403).send({
-            error: "You don't have access to this video",
+            error: "Voce nao tem acesso a este video",
           });
         }
 
@@ -1109,7 +1109,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
       } catch (error: any) {
         console.error("Error fetching comments:", error);
         return reply.status(500).send({
-          error: error.message || "Failed to fetch comments",
+          error: error.message || "Falha ao buscar comentarios",
         });
       }
     },
@@ -1133,7 +1133,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         });
 
         if (!video) {
-          return reply.status(404).send({ error: "Video not found" });
+          return reply.status(404).send({ error: "Video nao encontrado" });
         }
 
         const isCreator = video.course.creatorId === userId;
@@ -1146,7 +1146,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
         if (!isCreator && !isEnrolled) {
           return reply.status(403).send({
-            error: "You must be enrolled in this course to comment",
+            error: "Voce precisa estar matriculado neste curso para comentar",
           });
         }
 
@@ -1176,7 +1176,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
         if (!commentWithUser) {
           return reply.status(500).send({
-            error: "Failed to retrieve created comment",
+            error: "Falha ao recuperar comentario criado",
           });
         }
 
@@ -1184,7 +1184,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
       } catch (error: any) {
         console.error("Error creating comment:", error);
         return reply.status(500).send({
-          error: error.message || "Failed to create comment",
+          error: error.message || "Falha ao criar comentario",
         });
       }
     },

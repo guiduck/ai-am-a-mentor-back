@@ -32,7 +32,7 @@ export async function studentRoutes(fastify: FastifyInstance) {
 
       if (existingUserByEmail) {
         return reply.status(409).send({
-          message: "User with this email already exists",
+          message: "Ja existe um usuario com este email",
         });
       }
 
@@ -43,7 +43,7 @@ export async function studentRoutes(fastify: FastifyInstance) {
 
       if (existingUserByUsername) {
         return reply.status(409).send({
-          message: "Username already taken",
+          message: "Nome de usuario ja em uso",
         });
       }
 
@@ -60,7 +60,7 @@ export async function studentRoutes(fastify: FastifyInstance) {
         .returning();
 
       return reply.status(201).send({
-        message: "Student account successfully created",
+        message: "Conta de aluno criada com sucesso",
         user: newUser[0],
       });
     } catch (error: any) {
@@ -89,12 +89,12 @@ export async function studentRoutes(fastify: FastifyInstance) {
         // PostgreSQL unique violation
         if (error.constraint === "users_email_unique") {
           return reply.status(409).send({
-            message: "User with this email already exists",
+            message: "Ja existe um usuario com este email",
           });
         }
         if (error.constraint === "users_username_unique") {
           return reply.status(409).send({
-            message: "Username already taken",
+            message: "Nome de usuario ja em uso",
           });
         }
       }
@@ -114,16 +114,19 @@ export async function studentRoutes(fastify: FastifyInstance) {
         );
 
         return reply.status(500).send({
-          message: "Database error. Please check if migrations are up to date.",
-          error: error.message,
-          query: error.query,
-          params: error.params,
+          message:
+            "Erro no banco de dados. Verifique se as migrations estao atualizadas.",
+          details: {
+            error: error.message,
+            query: error.query,
+            params: error.params,
+          },
         });
       }
 
       return reply.status(500).send({
-        message: "Failed to create student account",
-        error: error.message,
+        message: "Falha ao criar conta de aluno",
+        details: error.message,
         code: error.code,
       });
     }
@@ -138,13 +141,13 @@ export async function studentRoutes(fastify: FastifyInstance) {
     });
 
     if (!user) {
-      return reply.status(401).send({ message: "Invalid credentials" });
+      return reply.status(401).send({ message: "Credenciais invalidas" });
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
     if (!isPasswordValid) {
-      return reply.status(401).send({ message: "Invalid credentials" });
+      return reply.status(401).send({ message: "Credenciais invalidas" });
     }
 
     const token = jwt.sign(
@@ -168,7 +171,7 @@ export async function studentRoutes(fastify: FastifyInstance) {
     return { access_token: token, token }; // Return both for compatibility
   });
 
-  // Enroll in a course (FREE courses only - paid courses use /payments/course/purchase-with-credits or /payments/course/create-intent)
+  // Enroll in a course (cursos gratuitos nao sao permitidos no MVP)
   fastify.post(
     "/students/enroll/:courseId",
     { preHandler: [fastify.authenticate] },
@@ -180,7 +183,7 @@ export async function studentRoutes(fastify: FastifyInstance) {
       if (request.user.role !== "student") {
         return reply
           .status(403)
-          .send({ message: "Only students can enroll in courses" });
+          .send({ message: "Apenas alunos podem se matricular em cursos" });
       }
 
       // Check if course exists
@@ -189,7 +192,7 @@ export async function studentRoutes(fastify: FastifyInstance) {
       });
 
       if (!course) {
-        return reply.status(404).send({ message: "Course not found" });
+        return reply.status(404).send({ message: "Curso nao encontrado" });
       }
 
       // Check if course is free (price = 0 and no credit cost)
@@ -197,42 +200,20 @@ export async function studentRoutes(fastify: FastifyInstance) {
         parseFloat(course.price) === 0 &&
         (!course.creditCost || course.creditCost === 0);
 
+      if (isFree) {
+        return reply.status(400).send({
+          message: "Cursos gratuitos não estão disponíveis no MVP",
+        });
+      }
+
       if (!isFree) {
         return reply.status(400).send({
           message:
-            "This course requires payment. Use /payments/course/purchase-with-credits or /payments/course/create-intent",
+            "Este curso exige pagamento. Use /payments/course/purchase-with-credits ou /payments/course/create-intent",
           price: course.price,
           creditCost: course.creditCost,
         });
       }
-
-      // Check if already enrolled
-      const existingEnrollment = await db.query.enrollments.findFirst({
-        where: and(
-          eq(enrollments.studentId, studentId),
-          eq(enrollments.courseId, courseId)
-        ),
-      });
-
-      if (existingEnrollment) {
-        return reply
-          .status(409)
-          .send({ message: "Already enrolled in this course" });
-      }
-
-      // Create enrollment
-      const newEnrollment = await db
-        .insert(enrollments)
-        .values({
-          studentId,
-          courseId,
-        })
-        .returning();
-
-      return reply.status(201).send({
-        message: "Successfully enrolled in course",
-        enrollment: newEnrollment[0],
-      });
     }
   );
 
@@ -247,7 +228,7 @@ export async function studentRoutes(fastify: FastifyInstance) {
       if (request.user.role !== "student") {
         return reply
           .status(403)
-          .send({ message: "Only students can access this endpoint" });
+          .send({ message: "Apenas alunos podem acessar este endpoint" });
       }
 
       const enrolledCourses = await db
@@ -279,7 +260,7 @@ export async function studentRoutes(fastify: FastifyInstance) {
       if (request.user.role !== "student") {
         return reply
           .status(403)
-          .send({ message: "Only students can check enrollment status" });
+          .send({ message: "Apenas alunos podem checar matricula" });
       }
 
       const enrollment = await db.query.enrollments.findFirst({

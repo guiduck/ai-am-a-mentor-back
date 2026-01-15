@@ -27,13 +27,13 @@ export async function userRoutes(fastify: FastifyInstance) {
         });
 
         if (!user) {
-          return reply.status(404).send({ message: "User not found" });
+          return reply.status(404).send({ message: "Usuario nao encontrado" });
         }
 
         return user;
       } catch (error) {
         console.error("Error fetching current user:", error);
-        return reply.status(500).send({ message: "Internal server error" });
+        return reply.status(500).send({ message: "Erro interno do servidor" });
       }
     }
   );
@@ -59,13 +59,13 @@ export async function userRoutes(fastify: FastifyInstance) {
         });
 
         if (!user) {
-          return reply.status(404).send({ message: "User not found" });
+          return reply.status(404).send({ message: "Usuario nao encontrado" });
         }
 
         return user;
       } catch (error) {
         console.error("Error fetching user:", error);
-        return reply.status(500).send({ message: "Internal server error" });
+        return reply.status(500).send({ message: "Erro interno do servidor" });
       }
     }
   );
@@ -91,7 +91,7 @@ export async function userRoutes(fastify: FastifyInstance) {
         });
 
         if (!currentUser) {
-          return reply.status(404).send({ message: "User not found" });
+          return reply.status(404).send({ message: "Usuario nao encontrado" });
         }
 
         // Check if username is being changed and if it's already taken
@@ -105,7 +105,7 @@ export async function userRoutes(fastify: FastifyInstance) {
 
           if (existingUser) {
             return reply.status(409).send({
-              message: "Username already taken",
+              message: "Nome de usuario ja em uso",
             });
           }
         }
@@ -118,7 +118,7 @@ export async function userRoutes(fastify: FastifyInstance) {
 
           if (existingUser) {
             return reply.status(409).send({
-              message: "Email already in use",
+              message: "Email ja em uso",
             });
           }
         }
@@ -163,7 +163,7 @@ export async function userRoutes(fastify: FastifyInstance) {
           });
 
         return {
-          message: "Profile updated successfully",
+          message: "Perfil atualizado com sucesso",
           user: updatedUser[0],
         };
       } catch (error: any) {
@@ -172,19 +172,19 @@ export async function userRoutes(fastify: FastifyInstance) {
         // Handle Zod validation errors
         if (error.name === "ZodError") {
           return reply.status(400).send({
-            message: "Validation error",
-            errors: error.errors,
+            message: "Erro de validacao",
+            details: error.errors,
           });
         }
 
         // Handle unique constraint violations
         if (error.code === "23505") {
           return reply.status(409).send({
-            message: "Username or email already in use",
+            message: "Nome de usuario ou email ja em uso",
           });
         }
 
-        return reply.status(500).send({ message: "Internal server error" });
+        return reply.status(500).send({ message: "Erro interno do servidor" });
       }
     }
   );

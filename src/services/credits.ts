@@ -81,7 +81,7 @@ export async function addCredits(
     return {
       success: false,
       newBalance: 0,
-      error: error.message || "Failed to add credits",
+      error: error.message || "Falha ao adicionar creditos",
     };
   }
 }
@@ -111,7 +111,7 @@ export async function deductCredits(
       return {
         success: false,
         newBalance: currentBalance,
-        error: "Insufficient credits",
+        error: "Creditos insuficientes",
       };
     }
 
@@ -142,7 +142,7 @@ export async function deductCredits(
     return {
       success: false,
       newBalance: 0,
-      error: error.message || "Failed to deduct credits",
+      error: error.message || "Falha ao debitar creditos",
     };
   }
 }
@@ -160,5 +160,4 @@ export async function getUserTransactions(
     limit,
   });
 }
-
 

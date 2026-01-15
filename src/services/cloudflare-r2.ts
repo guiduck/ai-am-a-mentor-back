@@ -28,7 +28,7 @@ export function isR2Configured(): boolean {
  */
 function getR2Client() {
   if (!isR2Configured()) {
-    throw new Error("Cloudflare R2 not configured");
+    throw new Error("Cloudflare R2 nao configurado");
   }
 
   return new S3Client({

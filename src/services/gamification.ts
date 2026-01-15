@@ -10,7 +10,7 @@ import {
   userBadges,
   xpTransactions,
 } from "../db/schema";
-import { eq, gte, and, desc } from "drizzle-orm";
+import { eq, gte, and, desc, sql } from "drizzle-orm";
 
 // XP rewards for different actions
 export const XP_REWARDS = {
@@ -170,7 +170,7 @@ export async function recordLessonComplete(
   await db
     .update(userProgress)
     .set({
-      lessonsCompleted: db.raw`lessons_completed + 1`,
+      lessonsCompleted: sql`${userProgress.lessonsCompleted} + 1`,
       updatedAt: new Date(),
     })
     .where(eq(userProgress.userId, userId));
@@ -210,7 +210,7 @@ export async function recordQuizComplete(
   await db
     .update(userProgress)
     .set({
-      quizzesPassed: db.raw`quizzes_passed + 1`,
+      quizzesPassed: sql`${userProgress.quizzesPassed} + 1`,
       updatedAt: new Date(),
     })
     .where(eq(userProgress.userId, userId));
@@ -247,7 +247,7 @@ export async function recordCourseComplete(
   await db
     .update(userProgress)
     .set({
-      coursesCompleted: db.raw`courses_completed + 1`,
+      coursesCompleted: sql`${userProgress.coursesCompleted} + 1`,
       updatedAt: new Date(),
     })
     .where(eq(userProgress.userId, userId));
@@ -507,4 +507,3 @@ export async function getLeaderboard(limit: number = 10): Promise<
     level: up.level,
   }));
 }
-

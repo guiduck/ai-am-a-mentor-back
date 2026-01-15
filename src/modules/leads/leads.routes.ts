@@ -50,9 +50,12 @@ export async function leadsRoutes(fastify: FastifyInstance) {
       } catch (error: any) {
         console.error("Error creating lead:", error);
         if (error instanceof z.ZodError) {
-          return reply.status(400).send({ error: error.issues });
+          return reply.status(400).send({
+            message: "Dados invalidos",
+            details: error.issues,
+          });
         }
-        return reply.status(500).send({ error: "Failed to create lead" });
+        return reply.status(500).send({ message: "Falha ao criar lead" });
       }
     },
   });
@@ -70,9 +73,8 @@ export async function leadsRoutes(fastify: FastifyInstance) {
         return reply.send({ leads: allLeads });
       } catch (error: any) {
         console.error("Error fetching leads:", error);
-        return reply.status(500).send({ error: "Failed to fetch leads" });
+        return reply.status(500).send({ message: "Falha ao buscar leads" });
       }
     },
   });
 }
-

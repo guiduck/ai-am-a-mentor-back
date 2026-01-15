@@ -13,9 +13,16 @@ import {
   createOnboardingLink,
   checkAccountStatus,
   createCoursePaymentWithSplit,
+  calculateSplitAmounts,
   getCreatorDashboardLink,
   getCreatorBalance,
 } from "../../services/stripe-connect";
+import {
+  createCoursePaymentIntent,
+  getOrCreateCustomer,
+} from "../../services/stripe";
+import { getCreatorCommissionRate } from "../../services/subscriptions";
+import { hasAcceptedCreatorTerms } from "../../services/creator-terms";
 
 const paymentMethodSchema = z.enum(["card", "boleto"]).default("card");
 
@@ -239,22 +246,10 @@ export async function connectRoutes(fastify: FastifyInstance) {
           return reply.status(404).send({ error: "Curso não encontrado" });
         }
 
-        // Get creator's Stripe account
-        const creator = await db.query.users.findFirst({
-          where: eq(users.id, course.creatorId),
-        });
-
-        if (!creator || !creator.stripeAccountId) {
-          return reply.status(400).send({ 
-            error: "O criador deste curso ainda não configurou o recebimento de pagamentos" 
-          });
-        }
-
-        // Check creator account status
-        const accountStatus = await checkAccountStatus(creator.stripeAccountId);
-        if (!accountStatus.isComplete) {
-          return reply.status(400).send({ 
-            error: "O criador deste curso ainda não completou a configuração bancária" 
+        const coursePrice = parseFloat(course.price);
+        if (!Number.isFinite(coursePrice) || coursePrice <= 0) {
+          return reply.status(400).send({
+            error: "Cursos gratuitos não estão disponíveis no MVP",
           });
         }
 
@@ -267,55 +262,144 @@ export async function connectRoutes(fastify: FastifyInstance) {
         });
 
         if (existingEnrollment) {
-          return reply.status(400).send({ error: "Você já está matriculado neste curso" });
-        }
-
-        const amount = parseFloat(course.price);
-        if (amount <= 0) {
-          // Free course - just enroll
-          await db.insert(enrollments).values({
-            studentId: userId,
-            courseId,
+          return reply.status(409).send({
+            error: "Você já está inscrito neste curso",
           });
-          return { message: "Matriculado com sucesso em curso gratuito" };
         }
 
-        // Create payment with split
-        const result = await createCoursePaymentWithSplit(
-          amount,
-          userId,
-          courseId,
-          creator.stripeAccountId,
-          paymentMethod
-        );
+        const creator = await db.query.users.findFirst({
+          where: eq(users.id, course.creatorId),
+        });
 
-        if (result.error) {
-          return reply.status(500).send({ error: result.error });
+        if (!creator) {
+          return reply.status(404).send({ error: "Criador não encontrado" });
+        }
+
+        const hasAcceptedTerms = await hasAcceptedCreatorTerms(creator.id);
+        if (!hasAcceptedTerms) {
+          return reply.status(400).send({
+            error:
+              "O criador deste curso ainda não aceitou os termos de venda",
+          });
+        }
+
+        const user = await db.query.users.findFirst({
+          where: eq(users.id, userId),
+        });
+
+        if (!user) {
+          return reply.status(404).send({ error: "Usuário não encontrado" });
+        }
+
+        const { customerId, error: customerError } = await getOrCreateCustomer(
+          userId,
+          user.email
+        );
+        if (customerError || !customerId) {
+          return reply.status(500).send({
+            error: customerError || "Falha ao criar cliente no Stripe",
+          });
+        }
+
+        const commissionRate = await getCreatorCommissionRate(creator.id);
+        const splitAmounts = calculateSplitAmounts(
+          coursePrice,
+          commissionRate
+        );
+        let payoutStatus: "split" | "pending_onboarding" = "pending_onboarding";
+        let result:
+          | {
+              clientSecret: string;
+              paymentIntentId: string;
+              platformFee: number;
+              creatorAmount: number;
+              boletoUrl?: string;
+              boletoNumber?: string;
+              boletoExpiresAt?: number;
+              error?: string;
+            }
+          | undefined;
+
+        if (creator.stripeAccountId) {
+          const accountStatus = await checkAccountStatus(
+            creator.stripeAccountId
+          );
+
+          if (accountStatus.isComplete) {
+            const splitResult = await createCoursePaymentWithSplit(
+              coursePrice,
+              userId,
+              courseId,
+              creator.stripeAccountId,
+              commissionRate,
+              paymentMethod,
+              customerId
+            );
+
+            if (splitResult.error || !splitResult.clientSecret) {
+              return reply.status(500).send({
+                error: splitResult.error || "Falha ao criar pagamento",
+              });
+            }
+
+            result = splitResult;
+            payoutStatus = "split";
+          }
+        }
+
+        if (!result) {
+          const intentResult = await createCoursePaymentIntent(
+            coursePrice,
+            userId,
+            courseId,
+            paymentMethod
+          );
+
+          if (intentResult.error || !intentResult.clientSecret) {
+            return reply.status(500).send({
+              error: intentResult.error || "Falha ao criar intenção de pagamento",
+            });
+          }
+
+          result = {
+            clientSecret: intentResult.clientSecret,
+            paymentIntentId: intentResult.paymentIntentId,
+            platformFee: splitAmounts.platformFee,
+            creatorAmount: splitAmounts.creatorAmount,
+            boletoUrl: intentResult.boletoUrl,
+            boletoNumber: intentResult.boletoNumber,
+            boletoExpiresAt: intentResult.boletoExpiresAt,
+          };
         }
 
         // Save payment record
         await db.insert(payments).values({
           userId,
           stripePaymentIntentId: result.paymentIntentId,
-          amount: amount.toString(),
+          stripeCustomerId: customerId,
+          amount: coursePrice.toString(),
           status: "pending",
           paymentType: "course",
           courseId,
           metadata: JSON.stringify({
             paymentMethod,
-            platformFee: result.platformFee,
-            creatorAmount: result.creatorAmount,
-            creatorAccountId: creator.stripeAccountId,
+            platformFee: splitAmounts.platformFee,
+            creatorAmount: splitAmounts.creatorAmount,
+            commissionRate,
+            payoutStatus,
+            creatorId: creator.id,
+            creatorStripeAccountId: creator.stripeAccountId || null,
           }),
         });
 
         return {
           clientSecret: result.clientSecret,
           paymentIntentId: result.paymentIntentId,
-          amount,
+          amount: coursePrice,
           platformFee: result.platformFee,
           creatorAmount: result.creatorAmount,
           paymentMethod,
+          payoutStatus,
         };
       } catch (error: any) {
         console.error("Error purchasing course:", error);
@@ -324,5 +408,3 @@ export async function connectRoutes(fastify: FastifyInstance) {
     },
   });
 }
-
-

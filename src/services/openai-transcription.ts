@@ -17,7 +17,7 @@ let openaiClient: OpenAI | null = null;
 
 function getOpenAIClient(): OpenAI {
   if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY not configured");
+    throw new Error("OPENAI_API_KEY nao configurada");
   }
 
   if (!openaiClient) {
@@ -52,7 +52,7 @@ export async function transcribeVideoFromR2(
     if (!videoStream || !videoStream.Body) {
       return {
         transcript: "",
-        error: "Failed to get video stream from R2",
+        error: "Falha ao obter o stream do video no R2",
       };
     }
 
@@ -76,7 +76,7 @@ export async function transcribeVideoFromR2(
       console.error("❌ FFmpeg is not available - cannot extract audio");
       return {
         transcript: "",
-        error: `FFmpeg is not available. Please install FFmpeg to enable video transcription. Audio extraction is required for videos of any size. Run: apt-get update && apt-get install -y ffmpeg`,
+        error: `FFmpeg nao esta disponivel. Instale o FFmpeg para habilitar a transcricao. A extracao de audio e obrigatoria. Rode: apt-get update && apt-get install -y ffmpeg`,
       };
     }
 
@@ -95,7 +95,7 @@ export async function transcribeVideoFromR2(
       console.error("❌ Audio extraction error:", extractError);
       return {
         transcript: "",
-        error: extractError || "Failed to extract audio from video",
+        error: extractError || "Falha ao extrair audio do video",
       };
     }
 
@@ -104,7 +104,7 @@ export async function transcribeVideoFromR2(
       return {
         transcript: "",
         error:
-          "Audio extraction returned empty buffer. The video may not contain audio track.",
+          "A extracao de audio retornou vazio. O video pode nao ter faixa de audio.",
       };
     }
 
@@ -119,7 +119,7 @@ export async function transcribeVideoFromR2(
       // This should be extremely rare (would require ~4+ hours of audio at 64kbps)
       return {
         transcript: "",
-        error: `Extracted audio is too large (${audioSizeMB}MB). This video may be too long. Please split into smaller segments.`,
+        error: `Audio extraido muito grande (${audioSizeMB}MB). O video pode ser muito longo. Divida em partes menores.`,
       };
     }
 
@@ -188,13 +188,13 @@ export async function transcribeVideoFromR2(
     if (error.status === 413 || error.message?.includes("413")) {
       return {
         transcript: "",
-        error: `File size limit exceeded. Audio extraction may have failed. Please ensure FFmpeg is installed and try again. Original error: ${error.message}`,
+        error: `Limite de tamanho excedido. A extracao de audio pode ter falhado. Garanta que o FFmpeg esteja instalado e tente novamente. Erro original: ${error.message}`,
       };
     }
 
     return {
       transcript: "",
-      error: error.message || "Failed to transcribe video",
+      error: error.message || "Falha ao transcrever video",
     };
   }
 }

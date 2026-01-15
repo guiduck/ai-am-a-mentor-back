@@ -9,7 +9,7 @@ let stripeClient: Stripe | null = null;
 
 function getStripeClient(): Stripe {
   if (!process.env.STRIPE_SECRET_KEY) {
-    throw new Error("STRIPE_SECRET_KEY not configured");
+    throw new Error("STRIPE_SECRET_KEY nao configurada");
   }
 
   if (!stripeClient) {
@@ -72,10 +72,11 @@ export async function createCreditsPaymentIntent(
     };
 
     // For Boleto, extract boleto data if available
-    if (paymentMethod === "boleto" && paymentIntent.next_action?.boleto_display_details) {
-      result.boletoUrl = paymentIntent.next_action.boleto_display_details.hosted_voucher_url;
-      result.boletoNumber = paymentIntent.next_action.boleto_display_details.number;
-      result.boletoExpiresAt = paymentIntent.next_action.boleto_display_details.expires_at;
+    const boletoDetails = paymentIntent.next_action?.boleto_display_details;
+    if (paymentMethod === "boleto" && boletoDetails) {
+      result.boletoUrl = boletoDetails.hosted_voucher_url ?? undefined;
+      result.boletoNumber = boletoDetails.number ?? undefined;
+      result.boletoExpiresAt = boletoDetails.expires_at ?? undefined;
     }
 
     return result;
@@ -85,7 +86,7 @@ export async function createCreditsPaymentIntent(
       clientSecret: "",
       paymentIntentId: "",
       paymentMethod,
-      error: error.message || "Failed to create payment intent",
+      error: error.message || "Falha ao criar a intencao de pagamento",
     };
   }
 }
@@ -127,10 +128,11 @@ export async function createCoursePaymentIntent(
     };
 
     // For Boleto, extract boleto data if available
-    if (paymentMethod === "boleto" && paymentIntent.next_action?.boleto_display_details) {
-      result.boletoUrl = paymentIntent.next_action.boleto_display_details.hosted_voucher_url;
-      result.boletoNumber = paymentIntent.next_action.boleto_display_details.number;
-      result.boletoExpiresAt = paymentIntent.next_action.boleto_display_details.expires_at;
+    const boletoDetails = paymentIntent.next_action?.boleto_display_details;
+    if (paymentMethod === "boleto" && boletoDetails) {
+      result.boletoUrl = boletoDetails.hosted_voucher_url ?? undefined;
+      result.boletoNumber = boletoDetails.number ?? undefined;
+      result.boletoExpiresAt = boletoDetails.expires_at ?? undefined;
     }
 
     return result;
@@ -140,7 +142,7 @@ export async function createCoursePaymentIntent(
       clientSecret: "",
       paymentIntentId: "",
       paymentMethod,
-      error: error.message || "Failed to create payment intent",
+      error: error.message || "Falha ao criar a intencao de pagamento",
     };
   }
 }
@@ -164,7 +166,7 @@ export async function verifyPaymentIntent(
     return {
       status: "unknown",
       succeeded: false,
-      error: error.message || "Failed to verify payment intent",
+      error: error.message || "Falha ao verificar a intencao de pagamento",
     };
   }
 }
@@ -202,7 +204,7 @@ export async function getOrCreateCustomer(
     console.error("Error getting/creating customer:", error);
     return {
       customerId: "",
-      error: error.message || "Failed to get or create customer",
+      error: error.message || "Falha ao obter ou criar o cliente",
     };
   }
 }

@@ -89,7 +89,7 @@ export async function extractAudioFromVideo(
             console.error("❌ Error reading audio file:", error);
             resolve({
               audioBuffer: Buffer.alloc(0),
-              error: error.message || "Failed to read extracted audio",
+              error: error.message || "Falha ao ler audio extraido",
             });
           }
         })
@@ -106,7 +106,7 @@ export async function extractAudioFromVideo(
             audioBuffer: Buffer.alloc(0),
             error:
               error.message ||
-              "Failed to extract audio. FFmpeg may not be installed.",
+              "Falha ao extrair audio. O FFmpeg pode nao estar instalado.",
           });
         })
         .run();
@@ -122,7 +122,7 @@ export async function extractAudioFromVideo(
 
     return {
       audioBuffer: Buffer.alloc(0),
-      error: error.message || "Failed to extract audio",
+      error: error.message || "Falha ao extrair audio",
     };
   }
 }
@@ -185,7 +185,7 @@ export async function extractAudioFromVideoStream(
     } catch (streamError: any) {
       console.error("❌ Error reading video stream:", streamError);
       hasError = true;
-      errorMessage = streamError.message || "Failed to read video stream";
+      errorMessage = streamError.message || "Falha ao ler stream do video";
     }
 
     // Close write stream
@@ -252,7 +252,7 @@ export async function extractAudioFromVideoStream(
             console.error("❌ Error reading audio file:", error);
             resolve({
               audioBuffer: Buffer.alloc(0),
-              error: error.message || "Failed to read extracted audio",
+              error: error.message || "Falha ao ler audio extraido",
             });
           }
         })
@@ -269,7 +269,7 @@ export async function extractAudioFromVideoStream(
             audioBuffer: Buffer.alloc(0),
             error:
               error.message ||
-              "Failed to extract audio. FFmpeg may not be installed.",
+              "Falha ao extrair audio. O FFmpeg pode nao estar instalado.",
           });
         })
         .run();
@@ -285,7 +285,7 @@ export async function extractAudioFromVideoStream(
 
     return {
       audioBuffer: Buffer.alloc(0),
-      error: error.message || "Failed to extract audio",
+      error: error.message || "Falha ao extrair audio",
     };
   }
 }

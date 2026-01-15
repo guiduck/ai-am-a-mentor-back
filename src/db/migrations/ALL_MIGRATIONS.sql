@@ -187,6 +187,41 @@ CREATE INDEX IF NOT EXISTS idx_quiz_attempts_quiz_id ON quiz_attempts(quiz_id);
 CREATE INDEX IF NOT EXISTS idx_quiz_attempts_student_id ON quiz_attempts(student_id);
 
 -- ============================================================================
+-- 5. CREATOR TERMS ACCEPTANCES
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS creator_terms_acceptances (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  creator_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  terms_version VARCHAR(50) NOT NULL,
+  accepted_ip VARCHAR(45) NOT NULL,
+  accepted_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_creator_terms_acceptances_creator_id
+  ON creator_terms_acceptances(creator_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_creator_terms_acceptances_creator_version
+  ON creator_terms_acceptances(creator_id, terms_version);
+
+-- ============================================================================
+-- 6. UPDATE CREATOR COMMISSION RATES (5% -> 3% -> 0%)
+-- ============================================================================
+UPDATE subscription_plans
+SET features = jsonb_set(features::jsonb, '{commission_rate}', '0.05'::jsonb)::text,
+    updated_at = NOW()
+WHERE name = 'creator_free';
+
+UPDATE subscription_plans
+SET features = jsonb_set(features::jsonb, '{commission_rate}', '0.03'::jsonb)::text,
+    updated_at = NOW()
+WHERE name = 'creator_basic';
+
+UPDATE subscription_plans
+SET features = jsonb_set(features::jsonb, '{commission_rate}', '0.0'::jsonb)::text,
+    updated_at = NOW()
+WHERE name = 'creator_pro';
+
+-- ============================================================================
 -- DONE! Verify tables were created:
 -- ============================================================================
 SELECT table_name FROM information_schema.tables 
@@ -202,6 +237,6 @@ AND table_name IN (
   'xp_transactions',
   'quizzes',
   'quiz_questions',
-  'quiz_attempts'
+  'quiz_attempts',
+  'creator_terms_acceptances'
 );
-

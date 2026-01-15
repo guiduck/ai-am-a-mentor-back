@@ -12,7 +12,7 @@ let stripeClient: Stripe | null = null;
 
 function getStripeClient(): Stripe {
   if (!process.env.STRIPE_SECRET_KEY) {
-    throw new Error("STRIPE_SECRET_KEY not configured");
+    throw new Error("STRIPE_SECRET_KEY nao configurada");
   }
 
   if (!stripeClient) {
@@ -24,8 +24,33 @@ function getStripeClient(): Stripe {
   return stripeClient;
 }
 
-// Platform fee percentage (10% for the platform)
-const PLATFORM_FEE_PERCENT = 10;
+/**
+ * Calculate platform fee and creator amount based on commission rate.
+ * @param amount - Course price in reais.
+ * @param commissionRate - Decimal rate (ex: 0.05 = 5%).
+ */
+export function calculateSplitAmounts(
+  amount: number,
+  commissionRate: number
+): {
+  platformFee: number;
+  creatorAmount: number;
+  platformFeeInCents: number;
+  creatorAmountInCents: number;
+} {
+  const normalizedRate = Number.isFinite(commissionRate) ? commissionRate : 0;
+  const safeRate = Math.max(0, Math.min(normalizedRate, 1));
+  const amountInCents = Math.round(amount * 100);
+  const platformFeeInCents = Math.round(amountInCents * safeRate);
+  const creatorAmountInCents = Math.max(0, amountInCents - platformFeeInCents);
+
+  return {
+    platformFee: platformFeeInCents / 100,
+    creatorAmount: creatorAmountInCents / 100,
+    platformFeeInCents,
+    creatorAmountInCents,
+  };
+}
 
 /**
  * Create a Stripe Connect account for a creator
@@ -61,7 +86,7 @@ export async function createConnectAccount(
     console.error("Error creating Connect account:", error);
     return {
       accountId: "",
-      error: error.message || "Failed to create Connect account",
+      error: error.message || "Falha ao criar conta Connect",
     };
   }
 }
@@ -89,7 +114,7 @@ export async function createOnboardingLink(
     console.error("Error creating onboarding link:", error);
     return {
       url: "",
-      error: error.message || "Failed to create onboarding link",
+      error: error.message || "Falha ao criar link de onboarding",
     };
   }
 }
@@ -134,21 +159,23 @@ export async function checkAccountStatus(
       isComplete: false,
       chargesEnabled: false,
       payoutsEnabled: false,
-      error: error.message || "Failed to check account status",
+      error: error.message || "Falha ao verificar status da conta",
     };
   }
 }
 
 /**
- * Create a Payment Intent with automatic split to creator
- * Platform takes 10%, creator receives 90%
+ * Create a Payment Intent with automatic split to creator.
+ * Commission rate is defined by the creator plan.
  */
 export async function createCoursePaymentWithSplit(
   amount: number, // Amount in reais (BRL)
   buyerId: string,
   courseId: string,
   creatorStripeAccountId: string,
-  paymentMethod: "card" | "boleto" = "card"
+  commissionRate: number,
+  paymentMethod: "card" | "boleto" = "card",
+  stripeCustomerId?: string
 ): Promise<{
   clientSecret: string;
   paymentIntentId: string;
@@ -159,14 +186,13 @@ export async function createCoursePaymentWithSplit(
   try {
     const stripe = getStripeClient();
 
-    // Convert reais to centavos
-    const amountInCents = Math.round(amount * 100);
+    const { platformFeeInCents, creatorAmountInCents } = calculateSplitAmounts(
+      amount,
+      commissionRate
+    );
+    const amountInCents = platformFeeInCents + creatorAmountInCents;
 
-    // Calculate platform fee (10%)
-    const platformFeeInCents = Math.round(amountInCents * (PLATFORM_FEE_PERCENT / 100));
-    const creatorAmountInCents = amountInCents - platformFeeInCents;
-
-    const paymentIntent = await stripe.paymentIntents.create({
+    const paymentIntentData: Stripe.PaymentIntentCreateParams = {
       amount: amountInCents,
       currency: "brl",
       payment_method_types: [paymentMethod],
@@ -182,8 +208,15 @@ export async function createCoursePaymentWithSplit(
         type: "course_purchase",
         platformFee: platformFeeInCents.toString(),
         creatorAmount: creatorAmountInCents.toString(),
+        commissionRate: commissionRate.toString(),
       },
-    });
+    };
+
+    if (stripeCustomerId) {
+      paymentIntentData.customer = stripeCustomerId;
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create(paymentIntentData);
 
     return {
       clientSecret: paymentIntent.client_secret || "",
@@ -198,7 +231,7 @@ export async function createCoursePaymentWithSplit(
       paymentIntentId: "",
       platformFee: 0,
       creatorAmount: 0,
-      error: error.message || "Failed to create payment",
+      error: error.message || "Falha ao criar pagamento",
     };
   }
 }
@@ -219,7 +252,7 @@ export async function getCreatorDashboardLink(
     console.error("Error creating dashboard link:", error);
     return {
       url: "",
-      error: error.message || "Failed to create dashboard link",
+      error: error.message || "Falha ao criar link do dashboard",
     };
   }
 }
@@ -254,9 +287,7 @@ export async function getCreatorBalance(
     return {
       available: 0,
       pending: 0,
-      error: error.message || "Failed to get balance",
+      error: error.message || "Falha ao obter saldo",
     };
   }
 }
-
-

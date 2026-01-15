@@ -18,7 +18,7 @@ export interface PlanFeatures {
   courses: number; // -1 = unlimited
   videos: number; // -1 = unlimited
   quizzes_per_month: number; // -1 = unlimited
-  commission_rate: number; // 0.25 = 25%
+  commission_rate: number; // 0.05 = 5%
   ai_questions_per_day: number; // -1 = unlimited
   support: "community" | "email" | "priority";
   certificates?: boolean;
@@ -67,7 +67,7 @@ let stripeClient: Stripe | null = null;
 
 function getStripeClient(): Stripe {
   if (!process.env.STRIPE_SECRET_KEY) {
-    throw new Error("STRIPE_SECRET_KEY not configured");
+    throw new Error("STRIPE_SECRET_KEY nao configurada");
   }
 
   if (!stripeClient) {
@@ -192,7 +192,7 @@ export async function getUserPlanFeatures(userId: string): Promise<PlanFeatures>
     courses: 1,
     videos: 10,
     quizzes_per_month: 0,
-    commission_rate: 0.25,
+    commission_rate: 0.05,
     ai_questions_per_day: 5,
     support: "community",
   };

@@ -12,20 +12,6 @@ declare module "fastify" {
       role: string;
     };
   }
-  interface FastifyReply {
-    setCookie(
-      name: string,
-      value: string,
-      options?: {
-        httpOnly?: boolean;
-        secure?: boolean;
-        sameSite?: "strict" | "lax" | "none";
-        path?: string;
-        maxAge?: number;
-        domain?: string;
-      }
-    ): this;
-  }
 }
 
 export default fp(async (fastify: FastifyInstance) => {
@@ -41,7 +27,7 @@ export default fp(async (fastify: FastifyInstance) => {
 
         if (!token) {
           return reply.code(401).send({
-            message: "Unauthorized",
+            message: "Token de acesso ausente",
             code: "MISSING_TOKEN",
           });
         }
@@ -58,7 +44,7 @@ export default fp(async (fastify: FastifyInstance) => {
         // Differentiate between expired and invalid tokens
         const isExpired = err.name === "TokenExpiredError";
         return reply.code(401).send({
-          message: isExpired ? "Token expired" : "Unauthorized",
+          message: isExpired ? "Token expirado" : "Token invalido",
           code: isExpired ? "TOKEN_EXPIRED" : "INVALID_TOKEN",
         });
       }
