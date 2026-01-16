@@ -114,7 +114,7 @@ fastify.setErrorHandler((error: FastifyError, request, reply) => {
 });
 
 // Normalize error responses to a single contract
-fastify.addHook("onSend", async (request, reply, payload) => {
+fastify.addHook("preSerialization", async (request, reply, payload) => {
   if (reply.statusCode < 400) {
     return payload;
   }
