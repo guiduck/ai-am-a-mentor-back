@@ -10,7 +10,7 @@
     "prod": "tsx src/index.ts",
     "db:generate": "npx drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate": "dotenv drizzle-kit migrate --config=drizzle-dev.config.ts",
-    "build": "apt-get update && apt-get install -y ffmpeg && npm install && npx drizzle-kit migrate --config=drizzle.prod.config.cjs",
+    "build": "apt-get update && apt-get install -y ffmpeg && npm install && node scripts/run-migration.js",
     "db:migrate:prod": "node scripts/run-migration.js",
     "db:check": "node scripts/check-table-structure.js",
     "db:fix-users": "node scripts/fix-users-table.js",
