@@ -20,8 +20,11 @@ async function runMigration() {
   try {
     console.log('🔄 Running migration...');
 
-    // Read the migration file
-    const migrationPath = path.join(__dirname, '../drizzle/0004_add_stripe_and_subscriptions.sql');
+    // Read the consolidated migrations file
+    const migrationPath = path.join(
+      __dirname,
+      "../src/db/migrations/ALL_MIGRATIONS.sql"
+    );
     const migrationSQL = fs.readFileSync(migrationPath, 'utf-8');
 
     // Split by semicolons and run each statement
