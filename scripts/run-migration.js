@@ -28,10 +28,15 @@ async function runMigration() {
     const migrationSQL = fs.readFileSync(migrationPath, 'utf-8');
 
     // Split by semicolons and run each statement
-    const statements = migrationSQL
+    const cleanedSQL = migrationSQL
+      .split('\n')
+      .filter(line => !line.trim().startsWith('--'))
+      .join('\n');
+
+    const statements = cleanedSQL
       .split(';')
       .map(s => s.trim())
-      .filter(s => s.length > 0 && !s.startsWith('--'));
+      .filter(s => s.length > 0);
 
     for (const statement of statements) {
       try {
@@ -41,10 +46,12 @@ async function runMigration() {
         // Ignore "already exists" errors
         if (err.message.includes('already exists') || err.message.includes('duplicate')) {
           console.log('⏭️  Skipped (already exists):', statement.substring(0, 60) + '...');
-        } else {
-          console.error('❌ Error:', err.message);
-          console.error('Statement:', statement);
+          continue;
         }
+
+        console.error('❌ Error:', err.message);
+        console.error('Statement:', statement);
+        throw err;
       }
     }
 

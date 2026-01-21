@@ -3,7 +3,6 @@
  * Manages user subscriptions, plan limits, and usage tracking
  */
 
-import Stripe from "stripe";
 import { db } from "../db";
 import {
   subscriptionPlans,
@@ -12,6 +11,7 @@ import {
   users,
 } from "../db/schema";
 import { eq, and, gte, lte } from "drizzle-orm";
+import { getStripeClient } from "./stripe-client";
 
 // Types
 export interface PlanFeatures {
@@ -62,22 +62,6 @@ export interface UsageStatus {
   periodEnd: Date;
 }
 
-// Stripe client
-let stripeClient: Stripe | null = null;
-
-function getStripeClient(): Stripe {
-  if (!process.env.STRIPE_SECRET_KEY) {
-    throw new Error("STRIPE_SECRET_KEY nao configurada");
-  }
-
-  if (!stripeClient) {
-    stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY, {
-      apiVersion: "2025-11-17.clover",
-    });
-  }
-
-  return stripeClient;
-}
 
 /**
  * Get all active subscription plans

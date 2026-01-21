@@ -142,6 +142,69 @@ export const payments = pgTable("payments", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// ============================================================================
+// STRIPE CONNECT V2
+// ============================================================================
+
+// Compras realizadas em contas conectadas (checkout direto)
+export const connectedAccountPurchases = pgTable("connected_account_purchases", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  stripeAccountId: varchar("stripe_account_id", { length: 255 }).notNull(),
+  stripeCheckoutSessionId: varchar("stripe_checkout_session_id", {
+    length: 255,
+  })
+    .notNull()
+    .unique(),
+  stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
+  productId: varchar("product_id", { length: 255 }),
+  priceId: varchar("price_id", { length: 255 }),
+  amountInCents: integer("amount_in_cents"),
+  currency: varchar("currency", { length: 10 }),
+  customerEmail: varchar("customer_email", { length: 255 }),
+  status: varchar("status", { length: 50 }).notNull(),
+  metadata: text("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Assinaturas vinculadas à conta conectada (customer_account)
+export const connectedAccountSubscriptions = pgTable(
+  "connected_account_subscriptions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    stripeAccountId: varchar("stripe_account_id", { length: 255 }).notNull(),
+    stripeSubscriptionId: varchar("stripe_subscription_id", {
+      length: 255,
+    })
+      .notNull()
+      .unique(),
+    priceId: varchar("price_id", { length: 255 }),
+    quantity: integer("quantity"),
+    status: varchar("status", { length: 50 }).notNull(),
+    currentPeriodStart: timestamp("current_period_start"),
+    currentPeriodEnd: timestamp("current_period_end"),
+    cancelAtPeriodEnd: integer("cancel_at_period_end").default(0).notNull(),
+    metadata: text("metadata"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  }
+);
+
+// Atualizações de requisitos/capacidades (webhooks thin V2)
+export const stripeAccountRequirementsUpdates = pgTable(
+  "stripe_account_requirements_updates",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stripeAccountId: varchar("stripe_account_id", { length: 255 }).notNull(),
+    eventId: varchar("event_id", { length: 255 }).notNull(),
+    eventType: varchar("event_type", { length: 255 }).notNull(),
+    requirementsStatus: varchar("requirements_status", { length: 50 }),
+    capabilities: text("capabilities"), // JSON string
+    payload: text("payload"), // JSON string
+    createdAt: timestamp("created_at").defaultNow(),
+  }
+);
+
 // Course Purchases - Compras de cursos (com créditos ou pagamento direto)
 export const coursePurchases = pgTable("course_purchases", {
   id: uuid("id").defaultRandom().primaryKey(),

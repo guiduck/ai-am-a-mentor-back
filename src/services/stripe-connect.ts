@@ -3,26 +3,10 @@
  * Handles creator accounts and payment splitting
  */
 
-import Stripe from "stripe";
 import { db } from "../db";
 import { users } from "../db/schema";
 import { eq } from "drizzle-orm";
-
-let stripeClient: Stripe | null = null;
-
-function getStripeClient(): Stripe {
-  if (!process.env.STRIPE_SECRET_KEY) {
-    throw new Error("STRIPE_SECRET_KEY nao configurada");
-  }
-
-  if (!stripeClient) {
-    stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY, {
-      apiVersion: "2025-11-17.clover",
-    });
-  }
-
-  return stripeClient;
-}
+import { getStripeClient } from "./stripe-client";
 
 /**
  * Calculate platform fee and creator amount based on commission rate.

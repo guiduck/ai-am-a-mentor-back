@@ -727,8 +727,23 @@ export async function paymentRoutes(fastify: FastifyInstance) {
               );
             }
 
-            // Create enrollment if course purchase
+            // Create enrollment + purchase record if course purchase
             if (payment.paymentType === "course" && payment.courseId) {
+              const existingPurchase =
+                await db.query.coursePurchases.findFirst({
+                  where: eq(coursePurchases.paymentId, payment.id),
+                });
+
+              if (!existingPurchase) {
+                await db.insert(coursePurchases).values({
+                  studentId: payment.userId,
+                  courseId: payment.courseId,
+                  paymentMethod: "stripe",
+                  amount: payment.amount,
+                  paymentId: payment.id,
+                });
+              }
+
               const alreadyEnrolled = await isUserEnrolled(
                 payment.userId,
                 payment.courseId

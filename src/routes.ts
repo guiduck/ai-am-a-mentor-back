@@ -5,6 +5,7 @@ import { videoRoutes } from "./modules/videos/videos.routes";
 import { userRoutes } from "./modules/users/users.routes";
 import { paymentRoutes } from "./modules/payments/payments.routes";
 import { connectRoutes } from "./modules/payments/connect.routes";
+import { connectV2Routes } from "./modules/payments/connect-v2.routes";
 import { quizRoutes } from "./modules/quizzes/quizzes.routes";
 import { leadsRoutes } from "./modules/leads/leads.routes";
 import { subscriptionRoutes } from "./modules/subscriptions/subscriptions.routes";
@@ -21,6 +22,7 @@ export async function routes(fastify: FastifyInstance) {
   fastify.register(userRoutes, { prefix: "/api" });
   fastify.register(paymentRoutes, { prefix: "/api" });
   fastify.register(connectRoutes, { prefix: "/api" });
+  fastify.register(connectV2Routes, { prefix: "/api" });
   fastify.register(quizRoutes, { prefix: "/api" });
   fastify.register(leadsRoutes, { prefix: "/api" });
   fastify.register(subscriptionRoutes, { prefix: "/api" });

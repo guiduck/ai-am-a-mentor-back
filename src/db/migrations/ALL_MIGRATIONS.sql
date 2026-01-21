@@ -187,7 +187,60 @@ CREATE INDEX IF NOT EXISTS idx_quiz_attempts_quiz_id ON quiz_attempts(quiz_id);
 CREATE INDEX IF NOT EXISTS idx_quiz_attempts_student_id ON quiz_attempts(student_id);
 
 -- ============================================================================
--- 5. CREATOR TERMS ACCEPTANCES
+-- 5. CREDITS + PAYMENTS
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS user_credits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  balance INTEGER DEFAULT 0 NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type VARCHAR(50) NOT NULL,
+  amount INTEGER NOT NULL,
+  description TEXT,
+  related_id UUID,
+  related_type VARCHAR(50),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  stripe_payment_intent_id VARCHAR(255),
+  stripe_customer_id VARCHAR(255),
+  amount DECIMAL(10, 2) NOT NULL,
+  currency VARCHAR(10) DEFAULT 'brl' NOT NULL,
+  status VARCHAR(50) NOT NULL,
+  credits_awarded INTEGER,
+  payment_type VARCHAR(50) NOT NULL,
+  course_id UUID REFERENCES courses(id) ON DELETE SET NULL,
+  metadata TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE (stripe_payment_intent_id)
+);
+
+CREATE TABLE IF NOT EXISTS course_purchases (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  payment_method VARCHAR(50) NOT NULL,
+  amount DECIMAL(10, 2),
+  credits_used INTEGER,
+  payment_id UUID REFERENCES payments(id) ON DELETE SET NULL,
+  transaction_id UUID REFERENCES transactions(id) ON DELETE SET NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS credit_cost INTEGER;
+
+-- ============================================================================
+-- 6. CREATOR TERMS ACCEPTANCES
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS creator_terms_acceptances (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -204,7 +257,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_creator_terms_acceptances_creator_version
   ON creator_terms_acceptances(creator_id, terms_version);
 
 -- ============================================================================
--- 6. UPDATE CREATOR COMMISSION RATES (5% -> 3% -> 0%)
+-- 7. UPDATE CREATOR COMMISSION RATES (5% -> 3% -> 0%)
 -- ============================================================================
 UPDATE subscription_plans
 SET features = jsonb_set(features::jsonb, '{commission_rate}', '0.05'::jsonb)::text,
@@ -222,6 +275,60 @@ SET features = jsonb_set(features::jsonb, '{commission_rate}', '0.0'::jsonb)::te
 WHERE name = 'creator_pro';
 
 -- ============================================================================
+-- 8. STRIPE CONNECT V2 - PURCHASES, SUBSCRIPTIONS, REQUIREMENTS
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS connected_account_purchases (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  stripe_account_id VARCHAR(255) NOT NULL,
+  stripe_checkout_session_id VARCHAR(255) NOT NULL UNIQUE,
+  stripe_payment_intent_id VARCHAR(255),
+  product_id VARCHAR(255),
+  price_id VARCHAR(255),
+  amount_in_cents INTEGER,
+  currency VARCHAR(10),
+  customer_email VARCHAR(255),
+  status VARCHAR(50) NOT NULL,
+  metadata TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS connected_account_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  stripe_account_id VARCHAR(255) NOT NULL,
+  stripe_subscription_id VARCHAR(255) NOT NULL UNIQUE,
+  price_id VARCHAR(255),
+  quantity INTEGER,
+  status VARCHAR(50) NOT NULL,
+  current_period_start TIMESTAMP,
+  current_period_end TIMESTAMP,
+  cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+  metadata TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS stripe_account_requirements_updates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  stripe_account_id VARCHAR(255) NOT NULL,
+  event_id VARCHAR(255) NOT NULL,
+  event_type VARCHAR(255) NOT NULL,
+  requirements_status VARCHAR(50),
+  capabilities TEXT,
+  payload TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_connected_account_purchases_account
+  ON connected_account_purchases(stripe_account_id);
+
+CREATE INDEX IF NOT EXISTS idx_connected_account_subscriptions_account
+  ON connected_account_subscriptions(stripe_account_id);
+
+CREATE INDEX IF NOT EXISTS idx_stripe_account_requirements_updates_account
+  ON stripe_account_requirements_updates(stripe_account_id);
+
+-- ============================================================================
 -- DONE! Verify tables were created:
 -- ============================================================================
 SELECT table_name FROM information_schema.tables 
@@ -230,6 +337,10 @@ AND table_name IN (
   'subscription_plans',
   'user_subscriptions',
   'usage_limits',
+  'user_credits',
+  'transactions',
+  'payments',
+  'course_purchases',
   'leads',
   'user_progress',
   'badges',
@@ -238,5 +349,8 @@ AND table_name IN (
   'quizzes',
   'quiz_questions',
   'quiz_attempts',
-  'creator_terms_acceptances'
+  'creator_terms_acceptances',
+  'connected_account_purchases',
+  'connected_account_subscriptions',
+  'stripe_account_requirements_updates'
 );

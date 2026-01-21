@@ -3,23 +3,7 @@
  * Handles payment processing with Stripe (Card + Boleto)
  */
 
-import Stripe from "stripe";
-
-let stripeClient: Stripe | null = null;
-
-function getStripeClient(): Stripe {
-  if (!process.env.STRIPE_SECRET_KEY) {
-    throw new Error("STRIPE_SECRET_KEY nao configurada");
-  }
-
-  if (!stripeClient) {
-    stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY, {
-      apiVersion: "2025-11-17.clover",
-    });
-  }
-
-  return stripeClient;
-}
+import { getStripeClient } from "./stripe-client";
 
 // Payment method types
 export type PaymentMethodType = "card" | "boleto";
