@@ -11,7 +11,9 @@ import {
   users,
 } from "../db/schema";
 import { eq, and, gte, lte } from "drizzle-orm";
+import Stripe from "stripe";
 import { getStripeClient } from "./stripe-client";
+import { resolvePaymentAmount } from "./payment-bypass";
 
 // Types
 export interface PlanFeatures {
@@ -202,25 +204,54 @@ export async function createSubscriptionCheckout(
       return { error: "Plano não encontrado" };
     }
 
-    if (!plan.stripePriceId) {
+    const planPrice = Number.parseFloat(plan.price);
+    const {
+      amount: chargeAmount,
+      bypassApplied,
+    } = resolvePaymentAmount(planPrice, email);
+
+    const stripePriceId = plan.stripePriceId ?? "";
+    if (!stripePriceId && !bypassApplied) {
       return { error: "Plano não configurado para pagamento" };
     }
+
+    const interval =
+      plan.billingPeriod === "yearly" || plan.billingPeriod === "annual"
+        ? "year"
+        : "month";
+
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+      bypassApplied
+        ? {
+            price_data: {
+              currency: "brl",
+              product_data: {
+                name: plan.displayName,
+              },
+              unit_amount: Math.round(chargeAmount * 100),
+              recurring: {
+                interval,
+              },
+            },
+            quantity: 1,
+          }
+        : {
+            price: stripePriceId,
+            quantity: 1,
+          },
+    ];
 
     // Create checkout session
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
-      line_items: [
-        {
-          price: plan.stripePriceId,
-          quantity: 1,
-        },
-      ],
+      line_items: lineItems,
       customer_email: email,
       metadata: {
         userId,
         planId,
         planName: plan.name,
+        bypassApplied: String(bypassApplied),
       },
       success_url: `${process.env.FRONTEND_URL}/payments?success=true&plan=${plan.name}`,
       cancel_url: `${process.env.FRONTEND_URL}/payments?cancelled=true`,

@@ -21,6 +21,7 @@ import {
   verifyPaymentIntent,
   getOrCreateCustomer,
 } from "../../services/stripe";
+import { resolvePaymentAmount } from "../../services/payment-bypass";
 import {
   getUserCredits,
   initializeUserCredits,
@@ -300,6 +301,12 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           return reply.status(404).send({ error: "Usuário não encontrado" });
         }
 
+        const {
+          amount: chargeAmount,
+          bypassApplied,
+          originalAmount,
+        } = resolvePaymentAmount(amount, user.email);
+
         // Get or create Stripe customer
         const { customerId, error: customerError } = await getOrCreateCustomer(
           userId,
@@ -313,7 +320,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
         // Create payment intent with specified method (card or boleto)
         const result = await createCreditsPaymentIntent(
-          amount,
+          chargeAmount,
           userId,
           creditsAmount,
           paymentMethod
@@ -330,17 +337,21 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           userId,
           stripePaymentIntentId: result.paymentIntentId,
           stripeCustomerId: customerId,
-          amount: amount.toString(),
+          amount: chargeAmount.toString(),
           status: "pending",
           creditsAwarded: creditsAmount,
           paymentType: "credits",
-          metadata: JSON.stringify({ paymentMethod }),
+          metadata: JSON.stringify({
+            paymentMethod,
+            bypassApplied,
+            originalAmount,
+          }),
         });
 
         return {
           clientSecret: result.clientSecret,
           paymentIntentId: result.paymentIntentId,
-          amount,
+          amount: chargeAmount,
           creditsAmount,
           paymentMethod,
           // Boleto specific data
@@ -416,9 +427,14 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           });
         }
 
+        const {
+          amount: chargeAmount,
+          bypassApplied,
+          originalAmount,
+        } = resolvePaymentAmount(coursePrice, user.email);
         const commissionRate = await getCreatorCommissionRate(creator.id);
         const splitAmounts = calculateSplitAmounts(
-          coursePrice,
+          chargeAmount,
           commissionRate
         );
         let payoutStatus: "split" | "pending_onboarding" = "pending_onboarding";
@@ -442,7 +458,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
           if (accountStatus.isComplete) {
             const splitResult = await createCoursePaymentWithSplit(
-              coursePrice,
+              chargeAmount,
               userId,
               courseId,
               creator.stripeAccountId,
@@ -463,7 +479,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
         if (!result) {
           const intentResult = await createCoursePaymentIntent(
-            coursePrice,
+            chargeAmount,
             userId,
             courseId,
             paymentMethod
@@ -491,7 +507,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           userId,
           stripePaymentIntentId: result.paymentIntentId,
           stripeCustomerId: customerId,
-          amount: coursePrice.toString(),
+          amount: chargeAmount.toString(),
           status: "pending",
           paymentType: "course",
           courseId,
@@ -503,13 +519,15 @@ export async function paymentRoutes(fastify: FastifyInstance) {
             payoutStatus,
             creatorId: creator.id,
             creatorStripeAccountId: creator.stripeAccountId || null,
+            bypassApplied,
+            originalAmount,
           }),
         });
 
         return {
           clientSecret: result.clientSecret,
           paymentIntentId: result.paymentIntentId,
-          amount: coursePrice,
+          amount: chargeAmount,
           courseId,
           paymentMethod,
           platformFee: result.platformFee,
