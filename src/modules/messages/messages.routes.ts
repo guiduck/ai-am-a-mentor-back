@@ -69,38 +69,46 @@ async function ensureCreatorChatAccess(
 async function getNotificationRecipient(
   recipientId: string
 ): Promise<{ email: string; username: string | null } | null> {
-  const recipient = await db.query.users.findFirst({
-    where: eq(users.id, recipientId),
-    columns: { email: true, username: true, emailNotificationsEnabled: true },
-  });
+  try {
+    const recipient = await db.query.users.findFirst({
+      where: eq(users.id, recipientId),
+      columns: { email: true, username: true, emailNotificationsEnabled: true },
+    });
 
-  if (!recipient?.email) {
-    return null;
-  }
-
-  if (recipient.emailNotificationsEnabled !== 1) {
-    return null;
-  }
-
-  const lastNotification = await db.query.messageNotificationLogs.findFirst({
-    where: eq(messageNotificationLogs.userId, recipientId),
-    columns: { createdAt: true },
-    orderBy: (log, { desc }) => [desc(log.createdAt)],
-  });
-
-  if (lastNotification?.createdAt) {
-    const elapsedMs = Date.now() - lastNotification.createdAt.getTime();
-    if (elapsedMs < EMAIL_RATE_LIMIT_MINUTES * 60 * 1000) {
+    if (!recipient?.email) {
       return null;
     }
-  }
 
-  return {
-    email: recipient.email,
-    username: recipient.username,
-  };
+    if (recipient.emailNotificationsEnabled !== 1) {
+      return null;
+    }
+
+    const lastNotification = await db.query.messageNotificationLogs.findFirst({
+      where: eq(messageNotificationLogs.userId, recipientId),
+      columns: { createdAt: true },
+      orderBy: (log, { desc }) => [desc(log.createdAt)],
+    });
+
+    if (lastNotification?.createdAt) {
+      const elapsedMs = Date.now() - lastNotification.createdAt.getTime();
+      if (elapsedMs < EMAIL_RATE_LIMIT_MINUTES * 60 * 1000) {
+        return null;
+      }
+    }
+
+    return {
+      email: recipient.email,
+      username: recipient.username,
+    };
+  } catch (error) {
+    console.error("Erro ao validar destinatario do email:", error);
+    return null;
+  }
 }
 
+/**
+ * Envia email de notificação e registra log para rate limit.
+ */
 async function sendNotificationEmail(params: {
   recipientId: string;
   conversationId: string;
@@ -108,28 +116,32 @@ async function sendNotificationEmail(params: {
   courseTitle: string;
   messageBody: string;
 }) {
-  const recipient = await getNotificationRecipient(params.recipientId);
-  if (!recipient) {
-    return;
+  try {
+    const recipient = await getNotificationRecipient(params.recipientId);
+    if (!recipient) {
+      return;
+    }
+
+    const result = await sendMessageNotificationEmail({
+      toEmail: recipient.email,
+      toName: recipient.username,
+      senderName: params.senderName,
+      courseTitle: params.courseTitle,
+      messageBody: params.messageBody,
+    });
+
+    if (!result.success) {
+      return;
+    }
+
+    await db.insert(messageNotificationLogs).values({
+      userId: params.recipientId,
+      conversationId: params.conversationId,
+      createdAt: new Date(),
+    });
+  } catch (error) {
+    console.error("Erro ao enviar email de notificacao:", error);
   }
-
-  const result = await sendMessageNotificationEmail({
-    toEmail: recipient.email,
-    toName: recipient.username,
-    senderName: params.senderName,
-    courseTitle: params.courseTitle,
-    messageBody: params.messageBody,
-  });
-
-  if (!result.success) {
-    return;
-  }
-
-  await db.insert(messageNotificationLogs).values({
-    userId: params.recipientId,
-    conversationId: params.conversationId,
-    createdAt: new Date(),
-  });
 }
 
 async function getUnreadCount(

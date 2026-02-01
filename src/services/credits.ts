@@ -193,12 +193,16 @@ export async function getUserCreditBalance(userId: string): Promise<{
  */
 export async function getUserTransactions(
   userId: string,
-  limit: number = 50
+  options?: { limit?: number; offset?: number }
 ) {
+  const limit = options?.limit ?? 50;
+  const offset = options?.offset ?? 0;
+
   return await db.query.transactions.findMany({
     where: eq(transactions.userId, userId),
     orderBy: (transactions, { desc }) => [desc(transactions.createdAt)],
     limit,
+    offset,
   });
 }
 

@@ -66,6 +66,11 @@ const confirmPaymentSchema = z.object({
   paymentIntentId: z.string().min(1),
 });
 
+const transactionsQuerySchema = z.object({
+  page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().positive().max(100).optional(),
+});
+
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -205,10 +210,42 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     preHandler: [fastify.authenticate],
     handler: async (request, reply) => {
       try {
-        const transactions = await getUserTransactions(request.user.id, 50);
-        return transactions;
+        const query = transactionsQuerySchema.parse(request.query);
+        const shouldPaginate =
+          query.page !== undefined || query.pageSize !== undefined;
+
+        if (!shouldPaginate) {
+          const transactions = await getUserTransactions(request.user.id, {
+            limit: 50,
+          });
+          return transactions;
+        }
+
+        const page = query.page ?? 1;
+        const pageSize = query.pageSize ?? 10;
+        const offset = (page - 1) * pageSize;
+
+        const results = await getUserTransactions(request.user.id, {
+          limit: pageSize + 1,
+          offset,
+        });
+        const items = results.slice(0, pageSize);
+        const hasMore = results.length > pageSize;
+
+        return {
+          items,
+          page,
+          pageSize,
+          hasMore,
+        };
       } catch (error: any) {
         console.error("Error getting transactions:", error);
+        if (error instanceof z.ZodError) {
+          return reply.status(400).send({
+            error: "Parâmetros inválidos",
+            details: error.issues,
+          });
+        }
         return reply.status(500).send({
           error: "Falha ao obter histórico de transações",
         });

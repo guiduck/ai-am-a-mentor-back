@@ -139,41 +139,67 @@ export async function creatorRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post("/creators/login", async (request, reply) => {
-    const { email, password } = loginCreatorSchema.parse(request.body);
+    try {
+      const { email, password } = loginCreatorSchema.parse(request.body);
 
-    const user = await db.query.users.findFirst({
-      where: eq(users.email, email),
-    });
+      const [user] = await db
+        .select({
+          id: users.id,
+          role: users.role,
+          passwordHash: users.passwordHash,
+        })
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
 
-    if (!user) {
-      return reply.status(401).send({ message: "Credenciais invalidas" });
+      if (!user || !user.passwordHash) {
+        return reply.status(401).send({ message: "Credenciais invalidas" });
+      }
+
+      const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+
+      if (!isPasswordValid) {
+        return reply.status(401).send({ message: "Credenciais invalidas" });
+      }
+
+      if (!process.env.JWT_SECRET) {
+        return reply.status(500).send({
+          message: "JWT_SECRET nao configurado no servidor",
+        });
+      }
+
+      const token = jwt.sign(
+        { id: user.id, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: "1h" }
+      );
+
+      // Set cookie for automatic authentication (needed for video streaming)
+      // For cross-origin cookies, we need SameSite=None and Secure=true
+      const isProduction = process.env.NODE_ENV === "production";
+      reply.setCookie("access_token", token, {
+        httpOnly: false, // Allow JavaScript to read it
+        secure: isProduction, // HTTPS required for SameSite=None
+        sameSite: isProduction ? "none" : "lax", // None for cross-origin, lax for same-origin
+        path: "/", // Available for all paths
+        maxAge: 3600, // 1 hour (same as token expiration)
+        domain: undefined, // Let browser handle domain (don't set for cross-origin)
+      });
+
+      return { access_token: token, token }; // Return both for compatibility
+    } catch (error: any) {
+      if (error?.name === "ZodError") {
+        return reply.status(400).send({
+          message: "Dados invalidos",
+          details: error.errors,
+        });
+      }
+
+      console.error("Erro no login de criador:", error);
+      return reply.status(500).send({
+        message: "Erro interno do servidor",
+      });
     }
-
-    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
-
-    if (!isPasswordValid) {
-      return reply.status(401).send({ message: "Credenciais invalidas" });
-    }
-
-    const token = jwt.sign(
-      { id: user.id, role: user.role },
-      process.env.JWT_SECRET!,
-      { expiresIn: "1h" }
-    );
-
-    // Set cookie for automatic authentication (needed for video streaming)
-    // For cross-origin cookies, we need SameSite=None and Secure=true
-    const isProduction = process.env.NODE_ENV === "production";
-    reply.setCookie("access_token", token, {
-      httpOnly: false, // Allow JavaScript to read it
-      secure: isProduction, // HTTPS required for SameSite=None
-      sameSite: isProduction ? "none" : "lax", // None for cross-origin, lax for same-origin
-      path: "/", // Available for all paths
-      maxAge: 3600, // 1 hour (same as token expiration)
-      domain: undefined, // Let browser handle domain (don't set for cross-origin)
-    });
-
-    return { access_token: token, token }; // Return both for compatibility
   });
 
   fastify.post(

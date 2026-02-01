@@ -34,6 +34,15 @@ export async function userRoutes(fastify: FastifyInstance) {
         return user;
       } catch (error) {
         console.error("Error fetching current user:", error);
+        if (
+          (error as any)?.code === "42703" ||
+          (error as any)?.message?.includes("email_notifications_enabled")
+        ) {
+          return reply.status(500).send({
+            message:
+              "Coluna de notificacao de email nao encontrada. Rode as migrations.",
+          });
+        }
         return reply.status(500).send({ message: "Erro interno do servidor" });
       }
     }
@@ -67,6 +76,15 @@ export async function userRoutes(fastify: FastifyInstance) {
         return user;
       } catch (error) {
         console.error("Error fetching user:", error);
+        if (
+          (error as any)?.code === "42703" ||
+          (error as any)?.message?.includes("email_notifications_enabled")
+        ) {
+          return reply.status(500).send({
+            message:
+              "Coluna de notificacao de email nao encontrada. Rode as migrations.",
+          });
+        }
         return reply.status(500).send({ message: "Erro interno do servidor" });
       }
     }
