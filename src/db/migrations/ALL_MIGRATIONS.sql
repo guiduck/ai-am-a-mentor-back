@@ -74,11 +74,11 @@ CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email);
 
 -- Seed subscription plans
 INSERT INTO subscription_plans (name, display_name, type, price, features) VALUES
-('creator_free', 'Gratuito', 'creator', 0, '{"courses": 1, "videos": 10, "quizzes_per_month": 0, "commission_rate": 0.25, "ai_questions_per_day": 0, "support": "community"}'),
-('creator_basic', 'Básico', 'creator', 29.00, '{"courses": 5, "videos": 50, "quizzes_per_month": 5, "commission_rate": 0.15, "ai_questions_per_day": 10, "support": "email"}'),
-('creator_pro', 'Profissional', 'creator', 69.00, '{"courses": -1, "videos": -1, "quizzes_per_month": -1, "commission_rate": 0.08, "ai_questions_per_day": -1, "support": "priority", "certificates": true}'),
-('student_free', 'Gratuito', 'student', 0, '{"ai_questions_per_day": 5, "courses_access": "purchased"}'),
-('student_family', 'Família', 'student', 29.00, '{"ai_questions_per_day": -1, "courses_access": "all", "progress_reports": true}')
+('creator_free', 'Gratuito', 'creator', 0, '{"courses": 1, "videos": 10, "quizzes_per_month": 0, "credits_per_month": 5, "commission_rate": 0.25, "ai_questions_per_day": 0, "support": "community"}'),
+('creator_basic', 'Básico', 'creator', 29.00, '{"courses": 5, "videos": 50, "quizzes_per_month": 5, "credits_per_month": 50, "commission_rate": 0.15, "ai_questions_per_day": 10, "support": "email"}'),
+('creator_pro', 'Profissional', 'creator', 69.00, '{"courses": -1, "videos": -1, "quizzes_per_month": -1, "credits_per_month": 200, "commission_rate": 0.08, "ai_questions_per_day": -1, "support": "priority", "certificates": true}'),
+('student_free', 'Gratuito', 'student', 0, '{"ai_questions_per_day": 5, "credits_per_month": 0, "courses_access": "purchased"}'),
+('student_family', 'Família', 'student', 29.00, '{"ai_questions_per_day": -1, "credits_per_month": 0, "courses_access": "all", "progress_reports": true}')
 ON CONFLICT (name) DO NOTHING;
 
 -- ============================================================================
@@ -275,7 +275,35 @@ SET features = jsonb_set(features::jsonb, '{commission_rate}', '0.0'::jsonb)::te
 WHERE name = 'creator_pro';
 
 -- ============================================================================
--- 8. UPDATE STUDENT PLAN FEATURES (CHAT + IA, SEM LIMITES ZERO)
+-- 8. UPDATE CREATOR CREDITS PER MONTH
+-- ============================================================================
+UPDATE subscription_plans
+SET features = jsonb_set(features::jsonb, '{credits_per_month}', '5'::jsonb)::text,
+    updated_at = NOW()
+WHERE name = 'creator_free';
+
+UPDATE subscription_plans
+SET features = jsonb_set(features::jsonb, '{credits_per_month}', '50'::jsonb)::text,
+    updated_at = NOW()
+WHERE name = 'creator_basic';
+
+UPDATE subscription_plans
+SET features = jsonb_set(features::jsonb, '{credits_per_month}', '200'::jsonb)::text,
+    updated_at = NOW()
+WHERE name = 'creator_pro';
+
+UPDATE subscription_plans
+SET features = jsonb_set(features::jsonb, '{credits_per_month}', '0'::jsonb)::text,
+    updated_at = NOW()
+WHERE name = 'student_free';
+
+UPDATE subscription_plans
+SET features = jsonb_set(features::jsonb, '{credits_per_month}', '0'::jsonb)::text,
+    updated_at = NOW()
+WHERE name = 'student_family';
+
+-- ============================================================================
+-- 9. UPDATE STUDENT PLAN FEATURES (CHAT + IA, SEM LIMITES ZERO)
 -- ============================================================================
 UPDATE subscription_plans
 SET features = jsonb_set(

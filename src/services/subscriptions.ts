@@ -204,7 +204,7 @@ export async function createSubscriptionCheckout(
     if (!plan) {
       return { error: "Plano não encontrado" };
     }
-
+, p
     const planPrice = Number.parseFloat(plan.price);
     const {
       amount: chargeAmount,

@@ -20,6 +20,7 @@ import {
   estimateQuizCreditCost,
 } from "../../services/quiz-generator";
 import { getUserCredits, deductCredits } from "../../services/credits";
+import { ensureSubscriptionCredits } from "../../services/subscriptions";
 
 // ============================================================================
 // Validation Schemas
@@ -131,6 +132,7 @@ export async function quizRoutes(fastify: FastifyInstance) {
         }
 
         // Check credits
+        await ensureSubscriptionCredits(userId);
         const creditCost = estimateQuizCreditCost(numQuestions);
         const currentCredits = await getUserCredits(userId);
 

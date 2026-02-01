@@ -25,8 +25,8 @@ import {
 } from "../../services/stripe";
 import { resolvePaymentAmount } from "../../services/payment-bypass";
 import {
+  getUserCreditBalance,
   getUserCredits,
-  initializeUserCredits,
   addCredits,
   deductCredits,
   getUserTransactions,
@@ -36,7 +36,10 @@ import {
   createCoursePaymentWithSplit,
   calculateSplitAmounts,
 } from "../../services/stripe-connect";
-import { getCreatorCommissionRate } from "../../services/subscriptions";
+import {
+  ensureSubscriptionCredits,
+  getCreatorCommissionRate,
+} from "../../services/subscriptions";
 import {
   CREATOR_TERMS,
   getCreatorTermsAcceptance,
@@ -161,10 +164,17 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     handler: async (request, reply) => {
       try {
         const userId = request.user.id;
-        await initializeUserCredits(userId);
-        const balance = await getUserCredits(userId);
+        await ensureSubscriptionCredits(userId);
+        const creditBalance = await getUserCreditBalance(userId);
 
-        return { balance, userId };
+        return {
+          balance: creditBalance.balance,
+          userId,
+          expiresAt: creditBalance.expiresAt
+            ? creditBalance.expiresAt.toISOString()
+            : null,
+          expiresInDays: creditBalance.expiresInDays,
+        };
       } catch (error: any) {
         console.error("Error getting credit balance:", error);
         return reply.status(500).send({
@@ -671,6 +681,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     handler: async (request, reply) => {
       try {
         const userId = request.user.id;
+        await ensureSubscriptionCredits(userId);
         const schema = z.object({
           amount: z.number().int().positive(),
           feature: z.enum(["question", "quiz_generation"]),

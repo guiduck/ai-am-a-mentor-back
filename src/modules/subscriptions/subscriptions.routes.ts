@@ -15,6 +15,8 @@ import {
   getPlanByName,
 } from "../../services/subscriptions";
 import { db } from "../../db";
+import { userSubscriptions } from "../../db/schema";
+import { eq } from "drizzle-orm";
 
 export async function subscriptionRoutes(fastify: FastifyInstance) {
   // Get all available plans
@@ -240,14 +242,34 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
 
           case "customer.subscription.updated": {
             const subscription = event.data.object;
-            // Handle subscription updates (status changes, etc.)
+            await db
+              .update(userSubscriptions)
+              .set({
+                status: subscription.status,
+                currentPeriodStart: subscription.current_period_start
+                  ? new Date(subscription.current_period_start * 1000)
+                  : null,
+                currentPeriodEnd: subscription.current_period_end
+                  ? new Date(subscription.current_period_end * 1000)
+                  : null,
+                cancelAtPeriodEnd: subscription.cancel_at_period_end ? 1 : 0,
+                updatedAt: new Date(),
+              })
+              .where(eq(userSubscriptions.stripeSubscriptionId, subscription.id));
             console.log(`📝 Subscription updated: ${subscription.id}`);
             break;
           }
 
           case "customer.subscription.deleted": {
             const subscription = event.data.object;
-            // Handle subscription cancellation
+            await db
+              .update(userSubscriptions)
+              .set({
+                status: "cancelled",
+                cancelAtPeriodEnd: 0,
+                updatedAt: new Date(),
+              })
+              .where(eq(userSubscriptions.stripeSubscriptionId, subscription.id));
             console.log(`❌ Subscription cancelled: ${subscription.id}`);
             break;
           }

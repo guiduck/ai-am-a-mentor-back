@@ -316,10 +316,6 @@ export async function createQuizForVideo(
  * Based on approximate token usage
  */
 export function estimateQuizCreditCost(numQuestions: number = 5): number {
-  // TEMP: 1 crédito fixo para testes
-  // Valores originais:
-  // const baseCost = 30;
-  // const perQuestionCost = 4;
-  // return baseCost + numQuestions * perQuestionCost;
+  // MVP: 1 crédito por quiz
   return 1;
 }

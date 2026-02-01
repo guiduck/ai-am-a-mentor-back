@@ -29,6 +29,7 @@ const plans = [
       courses: 1,
       videos: 10,
       quizzes_per_month: 0,
+      credits_per_month: 5,
       commission_rate: 0.25,
       ai_questions_per_day: 0,
       support: 'community'
@@ -46,6 +47,7 @@ const plans = [
       courses: 5,
       videos: 50,
       quizzes_per_month: 5,
+      credits_per_month: 50,
       commission_rate: 0.15,
       ai_questions_per_day: 10,
       support: 'email'
@@ -63,6 +65,7 @@ const plans = [
       courses: -1,
       videos: -1,
       quizzes_per_month: -1,
+      credits_per_month: 200,
       commission_rate: 0.08,
       ai_questions_per_day: -1,
       support: 'priority',
@@ -82,6 +85,7 @@ const plans = [
       courses: 0,
       videos: 0,
       quizzes_per_month: 0,
+      credits_per_month: 0,
       commission_rate: 0,
       ai_questions_per_day: 5,
       support: 'community',
@@ -100,6 +104,7 @@ const plans = [
       courses: 0,
       videos: 0,
       quizzes_per_month: 0,
+      credits_per_month: 0,
       commission_rate: 0,
       ai_questions_per_day: -1,
       support: 'email',
@@ -179,4 +184,3 @@ async function seedPlans() {
 }
 
 seedPlans();
-

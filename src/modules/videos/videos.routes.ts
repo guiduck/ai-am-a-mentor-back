@@ -21,8 +21,12 @@ import {
 } from "../../services/cloudflare-r2";
 import { transcribeVideoFromR2 } from "../../services/openai-transcription";
 import { generateAIResponse } from "../../services/openai-chat";
-import { calculateVideoUploadCost } from "../../services/video-cost";
+import {
+  calculateAIChatCost,
+  calculateVideoUploadCost,
+} from "../../services/video-cost";
 import { getUserCredits, deductCredits } from "../../services/credits";
+import { ensureSubscriptionCredits } from "../../services/subscriptions";
 
 // Type declarations for Fastify multipart plugin
 declare module "fastify" {
@@ -390,6 +394,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
       try {
         const { videoId, question } = chatSchema.parse(request.body);
         const userId = request.user.id;
+        const userRole = request.user.role;
 
         if (!process.env.OPENAI_API_KEY) {
           return reply.status(500).send({ error: "OpenAI nao configurado" });
@@ -443,6 +448,39 @@ export async function videoRoutes(fastify: FastifyInstance) {
           });
         }
 
+        let creditsUsed = 0;
+        let newBalance: number | undefined;
+
+        if (userRole === "creator") {
+          const chatCost = calculateAIChatCost();
+          await ensureSubscriptionCredits(userId);
+          const balance = await getUserCredits(userId);
+          if (balance < chatCost) {
+            return reply.status(402).send({
+              error: "Créditos insuficientes",
+              required: chatCost,
+              current: balance,
+            });
+          }
+
+          const deductResult = await deductCredits(
+            userId,
+            chatCost,
+            `Pergunta IA: ${video.title}`,
+            videoId,
+            "ai_chat"
+          );
+
+          if (!deductResult.success) {
+            return reply.status(500).send({
+              error: deductResult.error || "Falha ao debitar creditos",
+            });
+          }
+
+          creditsUsed = chatCost;
+          newBalance = deductResult.newBalance;
+        }
+
         // 3. Generate AI response
         console.log("🤖 Generating AI response for video:", videoId);
         console.log("🤖 Question:", question);
@@ -463,6 +501,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
           response,
           videoId,
           question,
+          creditsUsed,
+          newBalance,
         };
       } catch (error: any) {
         console.error("AI chat error:", error);
@@ -515,6 +555,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
           creditCost = calculateVideoUploadCost(duration);
 
           // Check if creator has enough credits
+          await ensureSubscriptionCredits(creatorId);
           const balance = await getUserCredits(creatorId);
           if (balance < creditCost) {
             return reply.status(402).send({
