@@ -14,10 +14,10 @@ export function calculateVideoUploadCost(durationInSeconds: number): number {
 
 /**
  * Calculate quiz generation cost
- * Fixed cost: 1 crédito por quiz
+ * 1 crédito a cada 5 perguntas (1-5 => 1, 6-10 => 2)
  */
-export function calculateQuizGenerationCost(): number {
-  return 1;
+export function calculateQuizGenerationCost(numQuestions: number = 5): number {
+  return Math.max(1, Math.ceil(numQuestions / 5));
 }
 
 /**
@@ -27,7 +27,6 @@ export function calculateQuizGenerationCost(): number {
 export function calculateAIChatCost(): number {
   return 1;
 }
-
 
 
 

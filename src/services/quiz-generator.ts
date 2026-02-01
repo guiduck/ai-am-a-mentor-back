@@ -313,9 +313,9 @@ export async function createQuizForVideo(
 
 /**
  * Estimate credit cost for quiz generation
- * Based on approximate token usage
+ * Baseado no número de perguntas
  */
 export function estimateQuizCreditCost(numQuestions: number = 5): number {
-  // MVP: 1 crédito por quiz
-  return 1;
+  // MVP: 1 crédito a cada 5 perguntas (1-5 => 1, 6-10 => 2)
+  return Math.max(1, Math.ceil(numQuestions / 5));
 }
