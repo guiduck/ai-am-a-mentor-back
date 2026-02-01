@@ -21,6 +21,7 @@ export async function userRoutes(fastify: FastifyInstance) {
             username: true,
             email: true,
             role: true,
+            emailNotificationsEnabled: true,
             createdAt: true,
             updatedAt: true,
           },
@@ -53,6 +54,7 @@ export async function userRoutes(fastify: FastifyInstance) {
             username: true,
             email: true,
             role: true,
+            emailNotificationsEnabled: true,
             createdAt: true,
             updatedAt: true,
           },
@@ -75,6 +77,7 @@ export async function userRoutes(fastify: FastifyInstance) {
     username: z.string().min(3).optional(),
     email: z.string().email().optional(),
     password: z.string().min(6).optional(),
+    emailNotificationsEnabled: z.boolean().optional(),
   });
 
   fastify.put(
@@ -128,6 +131,7 @@ export async function userRoutes(fastify: FastifyInstance) {
           username?: string;
           email?: string;
           passwordHash?: string;
+          emailNotificationsEnabled?: number;
           updatedAt?: Date;
         } = {
           updatedAt: new Date(),
@@ -148,6 +152,12 @@ export async function userRoutes(fastify: FastifyInstance) {
           );
         }
 
+        if (updateData.emailNotificationsEnabled !== undefined) {
+          updateFields.emailNotificationsEnabled = updateData.emailNotificationsEnabled
+            ? 1
+            : 0;
+        }
+
         // Update user
         const updatedUser = await db
           .update(users)
@@ -158,6 +168,7 @@ export async function userRoutes(fastify: FastifyInstance) {
             username: users.username,
             email: users.email,
             role: users.role,
+            emailNotificationsEnabled: users.emailNotificationsEnabled,
             createdAt: users.createdAt,
             updatedAt: users.updatedAt,
           });

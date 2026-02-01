@@ -18,6 +18,9 @@ export const users = pgTable("users", {
   // Stripe Connect fields (for creators to receive payments)
   stripeAccountId: varchar("stripe_account_id", { length: 255 }),
   stripeOnboardingComplete: integer("stripe_onboarding_complete").default(0), // 0 = false, 1 = true
+  emailNotificationsEnabled: integer("email_notifications_enabled")
+    .default(1)
+    .notNull(), // 1 = enabled, 0 = disabled
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -137,6 +140,18 @@ export const messageReads = pgTable("message_reads", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   readAt: timestamp("read_at").defaultNow(),
+});
+
+// Message Notification Logs - Controle de rate limit para emails de mensagens
+export const messageNotificationLogs = pgTable("message_notification_logs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  conversationId: uuid("conversation_id")
+    .notNull()
+    .references(() => conversations.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // User Credits - Saldo de créditos por usuário

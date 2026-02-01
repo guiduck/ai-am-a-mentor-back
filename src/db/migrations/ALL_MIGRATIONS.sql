@@ -8,6 +8,8 @@
 -- ============================================================================
 ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_account_id VARCHAR(255);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_onboarding_complete INTEGER DEFAULT 0;
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS email_notifications_enabled INTEGER NOT NULL DEFAULT 1;
 
 -- ============================================================================
 -- 2. SUBSCRIPTION SYSTEM
@@ -432,6 +434,16 @@ CREATE TABLE IF NOT EXISTS message_reads (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_message_reads_unique
   ON message_reads(message_id, user_id);
 
+CREATE TABLE IF NOT EXISTS message_notification_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_notification_logs_user
+  ON message_notification_logs(user_id, created_at DESC);
+
 -- ============================================================================
 -- DONE! Verify tables were created:
 -- ============================================================================
@@ -459,5 +471,6 @@ AND table_name IN (
   'stripe_account_requirements_updates',
   'conversations',
   'messages',
-  'message_reads'
+  'message_reads',
+  'message_notification_logs'
 );

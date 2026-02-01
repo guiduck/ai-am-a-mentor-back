@@ -5,6 +5,7 @@ import {
   conversations,
   courses,
   enrollments,
+  messageNotificationLogs,
   messageReads,
   messages,
   users,
@@ -12,6 +13,8 @@ import {
 import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
 import { getUserPlanFeatures } from "../../services/subscriptions";
 import { sendMessageNotificationEmail } from "../../services/email";
+
+const EMAIL_RATE_LIMIT_MINUTES = 15;
 
 const messageSchema = z.object({
   message: z
@@ -60,28 +63,102 @@ async function ensureCreatorChatAccess(
   return { allowed: true };
 }
 
+/**
+ * Retorna o destinatário se ele pode receber emails de notificação.
+ */
+async function getNotificationRecipient(
+  recipientId: string
+): Promise<{ email: string; username: string | null } | null> {
+  const recipient = await db.query.users.findFirst({
+    where: eq(users.id, recipientId),
+    columns: { email: true, username: true, emailNotificationsEnabled: true },
+  });
+
+  if (!recipient?.email) {
+    return null;
+  }
+
+  if (recipient.emailNotificationsEnabled !== 1) {
+    return null;
+  }
+
+  const lastNotification = await db.query.messageNotificationLogs.findFirst({
+    where: eq(messageNotificationLogs.userId, recipientId),
+    columns: { createdAt: true },
+    orderBy: (log, { desc }) => [desc(log.createdAt)],
+  });
+
+  if (lastNotification?.createdAt) {
+    const elapsedMs = Date.now() - lastNotification.createdAt.getTime();
+    if (elapsedMs < EMAIL_RATE_LIMIT_MINUTES * 60 * 1000) {
+      return null;
+    }
+  }
+
+  return {
+    email: recipient.email,
+    username: recipient.username,
+  };
+}
+
 async function sendNotificationEmail(params: {
   recipientId: string;
+  conversationId: string;
   senderName: string;
   courseTitle: string;
   messageBody: string;
 }) {
-  const recipient = await db.query.users.findFirst({
-    where: eq(users.id, params.recipientId),
-    columns: { email: true, username: true },
-  });
-
-  if (!recipient?.email) {
+  const recipient = await getNotificationRecipient(params.recipientId);
+  if (!recipient) {
     return;
   }
 
-  await sendMessageNotificationEmail({
+  const result = await sendMessageNotificationEmail({
     toEmail: recipient.email,
     toName: recipient.username,
     senderName: params.senderName,
     courseTitle: params.courseTitle,
     messageBody: params.messageBody,
   });
+
+  if (!result.success) {
+    return;
+  }
+
+  await db.insert(messageNotificationLogs).values({
+    userId: params.recipientId,
+    conversationId: params.conversationId,
+    createdAt: new Date(),
+  });
+}
+
+async function getUnreadCount(
+  conversationId: string,
+  userId: string
+): Promise<number> {
+  const conversationMessages = await db.query.messages.findMany({
+    where: eq(messages.conversationId, conversationId),
+    columns: { id: true, senderId: true },
+  });
+
+  const unreadMessageIds = conversationMessages
+    .filter((message) => message.senderId !== userId)
+    .map((message) => message.id);
+
+  if (unreadMessageIds.length === 0) {
+    return 0;
+  }
+
+  const reads = await db.query.messageReads.findMany({
+    where: and(
+      eq(messageReads.userId, userId),
+      inArray(messageReads.messageId, unreadMessageIds)
+    ),
+    columns: { messageId: true },
+  });
+
+  const readIds = new Set(reads.map((read) => read.messageId));
+  return unreadMessageIds.filter((id) => !readIds.has(id)).length;
 }
 
 /**
@@ -189,9 +266,11 @@ export async function messagesRoutes(fastify: FastifyInstance) {
           ],
         });
 
-        const formatted = list.map((conversation) => {
+        const formatted = await Promise.all(
+          list.map(async (conversation) => {
           const isCreator = conversation.creatorId === userId;
           const participant = isCreator ? conversation.student : conversation.creator;
+          const unreadCount = await getUnreadCount(conversation.id, userId);
 
           return {
             id: conversation.id,
@@ -201,8 +280,10 @@ export async function messagesRoutes(fastify: FastifyInstance) {
             participantName: participant.username,
             lastMessageAt: conversation.lastMessageAt,
             createdAt: conversation.createdAt,
+            unreadCount,
           };
-        });
+        })
+        );
 
         return { conversations: formatted };
       } catch (error: any) {
@@ -421,6 +502,7 @@ export async function messagesRoutes(fastify: FastifyInstance) {
         if (sender?.username) {
           await sendNotificationEmail({
             recipientId,
+            conversationId: conversation.id,
             senderName: sender.username,
             courseTitle: course.title,
             messageBody: data.message,
@@ -507,6 +589,7 @@ export async function messagesRoutes(fastify: FastifyInstance) {
         if (sender?.username) {
           await sendNotificationEmail({
             recipientId,
+            conversationId: conversation.id,
             senderName: sender.username,
             courseTitle: conversation.course.title,
             messageBody: data.message,

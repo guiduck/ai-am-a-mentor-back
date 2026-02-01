@@ -12,6 +12,8 @@
     "db:migrate": "dotenv drizzle-kit migrate --config=drizzle-dev.config.ts",
     "build": "apt-get update && apt-get install -y ffmpeg && npm install && node scripts/run-migration.js",
     "db:migrate:prod": "node scripts/run-migration.js",
+    "db:migrate:staging": "dotenv -e .env.local -- node scripts/run-migration.js",
+    "db:migrate:prod:env": "dotenv -e .env.production -- node scripts/run-migration.js",
     "db:check": "node scripts/check-table-structure.js",
     "db:fix-users": "node scripts/fix-users-table.js",
     "db:seed-plans": "node scripts/seed-plans.js"

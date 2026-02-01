@@ -9,13 +9,13 @@ import {
   userSubscriptions,
   usageLimits,
   users,
+  userCredits,
   transactions,
 } from "../db/schema";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, and, gte, lte, sql } from "drizzle-orm";
 import Stripe from "stripe";
 import { getStripeClient } from "./stripe-client";
 import { resolvePaymentAmount } from "./payment-bypass";
-import { addCredits } from "./credits";
 
 // Types
 export interface PlanFeatures {
@@ -210,28 +210,56 @@ export async function ensureSubscriptionCredits(userId: string): Promise<void> {
     subscription?.currentPeriodEnd ??
     new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-  const existingCredit = await db.query.transactions.findFirst({
-    where: and(
-      eq(transactions.userId, userId),
-      eq(transactions.type, "subscription_credit"),
-      gte(transactions.createdAt, periodStart),
-      lte(transactions.createdAt, periodEnd)
-    ),
-  });
-
-  if (existingCredit) {
-    return;
-  }
-
   const planLabel = subscription?.plan.displayName ?? "plano gratuito";
-  await addCredits(
-    userId,
-    monthlyCredits,
-    `Créditos mensais do ${planLabel}`,
-    subscription?.id,
-    "subscription",
-    "subscription_credit"
-  );
+
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
+
+    const existingCredit = await tx.query.transactions.findFirst({
+      where: and(
+        eq(transactions.userId, userId),
+        eq(transactions.type, "subscription_credit"),
+        gte(transactions.createdAt, periodStart),
+        lte(transactions.createdAt, periodEnd)
+      ),
+    });
+
+    if (existingCredit) {
+      return;
+    }
+
+    await tx
+      .insert(userCredits)
+      .values({
+        userId,
+        balance: 0,
+      })
+      .onConflictDoNothing();
+
+    const currentCredits = await tx.query.userCredits.findFirst({
+      where: eq(userCredits.userId, userId),
+    });
+
+    const currentBalance = currentCredits?.balance ?? 0;
+    const newBalance = currentBalance + monthlyCredits;
+
+    await tx
+      .update(userCredits)
+      .set({
+        balance: newBalance,
+        updatedAt: new Date(),
+      })
+      .where(eq(userCredits.userId, userId));
+
+    await tx.insert(transactions).values({
+      userId,
+      type: "subscription_credit",
+      amount: monthlyCredits,
+      description: `Créditos mensais do ${planLabel}`,
+      relatedId: subscription?.id,
+      relatedType: "subscription",
+    });
+  });
 }
 
 /**
