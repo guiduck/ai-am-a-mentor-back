@@ -87,6 +87,7 @@ CLOUDFLARE_ACCOUNT_ID=your-account-id
 CLOUDFLARE_ACCESS_KEY_ID=your-access-key
 CLOUDFLARE_SECRET_ACCESS_KEY=your-secret-key
 CLOUDFLARE_BUCKET_NAME=ai-am-a-mentor
+CLOUDFLARE_BACKUP_BUCKET_NAME=ai-am-a-mentor-backup # opcional, backup no mesmo Cloudflare
 CLOUDFLARE_R2_ENDPOINT=https://your-account-id.r2.cloudflarestorage.com
 
 # OpenAI (use a mesma key)

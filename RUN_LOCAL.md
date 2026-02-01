@@ -39,6 +39,7 @@ CLOUDFLARE_ACCOUNT_ID="seu-account-id"
 CLOUDFLARE_ACCESS_KEY_ID="sua-access-key"
 CLOUDFLARE_SECRET_ACCESS_KEY="sua-secret-key"
 CLOUDFLARE_BUCKET_NAME="nome-do-bucket"
+CLOUDFLARE_BACKUP_BUCKET_NAME="nome-do-bucket-backup" # opcional
 CLOUDFLARE_R2_PUBLIC_URL="https://seu-bucket.r2.cloudflarestorage.com"
 ```
 

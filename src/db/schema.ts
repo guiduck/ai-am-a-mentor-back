@@ -93,6 +93,52 @@ export const comments = pgTable("comments", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// ============================================================================
+// MESSAGES SYSTEM
+// ============================================================================
+
+// Conversations - Conversas entre creator e aluno por curso
+export const conversations = pgTable("conversations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  courseId: uuid("course_id")
+    .notNull()
+    .references(() => courses.id, { onDelete: "cascade" }),
+  creatorId: uuid("creator_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  studentId: uuid("student_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  lastMessageAt: timestamp("last_message_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Messages - Mensagens enviadas em uma conversa
+export const messages = pgTable("messages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  conversationId: uuid("conversation_id")
+    .notNull()
+    .references(() => conversations.id, { onDelete: "cascade" }),
+  senderId: uuid("sender_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Message Reads - Controle de leitura por usuário
+export const messageReads = pgTable("message_reads", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  messageId: uuid("message_id")
+    .notNull()
+    .references(() => messages.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  readAt: timestamp("read_at").defaultNow(),
+});
+
 // User Credits - Saldo de créditos por usuário
 export const userCredits = pgTable("user_credits", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -278,6 +324,14 @@ export const quizAttempts = pgTable("quiz_attempts", {
 export const usersRelations = relations(users, ({ one, many }) => ({
   createdCourses: many(courses),
   enrollments: many(enrollments),
+  conversationsAsCreator: many(conversations, {
+    relationName: "creatorConversations",
+  }),
+  conversationsAsStudent: many(conversations, {
+    relationName: "studentConversations",
+  }),
+  sentMessages: many(messages),
+  messageReads: many(messageReads),
   credits: one(userCredits),
   transactions: many(transactions),
   payments: many(payments),
@@ -292,6 +346,7 @@ export const coursesRelations = relations(courses, ({ one, many }) => ({
   }),
   videos: many(videos),
   enrollments: many(enrollments),
+  conversations: many(conversations),
 }));
 
 export const videosRelations = relations(videos, ({ one, many }) => ({
@@ -329,6 +384,47 @@ export const commentsRelations = relations(comments, ({ one }) => ({
   }),
   user: one(users, {
     fields: [comments.userId],
+    references: [users.id],
+  }),
+}));
+
+export const conversationsRelations = relations(conversations, ({ one, many }) => ({
+  course: one(courses, {
+    fields: [conversations.courseId],
+    references: [courses.id],
+  }),
+  creator: one(users, {
+    fields: [conversations.creatorId],
+    references: [users.id],
+    relationName: "creatorConversations",
+  }),
+  student: one(users, {
+    fields: [conversations.studentId],
+    references: [users.id],
+    relationName: "studentConversations",
+  }),
+  messages: many(messages),
+}));
+
+export const messagesRelations = relations(messages, ({ one, many }) => ({
+  conversation: one(conversations, {
+    fields: [messages.conversationId],
+    references: [conversations.id],
+  }),
+  sender: one(users, {
+    fields: [messages.senderId],
+    references: [users.id],
+  }),
+  reads: many(messageReads),
+}));
+
+export const messageReadsRelations = relations(messageReads, ({ one }) => ({
+  message: one(messages, {
+    fields: [messageReads.messageId],
+    references: [messages.id],
+  }),
+  user: one(users, {
+    fields: [messageReads.userId],
     references: [users.id],
   }),
 }));

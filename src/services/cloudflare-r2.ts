@@ -5,9 +5,11 @@
 
 import {
   S3Client,
+  HeadObjectCommand,
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  CopyObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -21,6 +23,13 @@ export function isR2Configured(): boolean {
     process.env.CLOUDFLARE_ACCESS_KEY_ID &&
     process.env.CLOUDFLARE_SECRET_ACCESS_KEY
   );
+}
+
+/**
+ * Check if Cloudflare R2 backup bucket is configured
+ */
+function isR2BackupConfigured(): boolean {
+  return isR2Configured() && !!process.env.CLOUDFLARE_BACKUP_BUCKET_NAME;
 }
 
 /**
@@ -81,6 +90,39 @@ export async function uploadFileToR2(
 }
 
 /**
+ * Check if a file exists in R2.
+ */
+export async function doesR2ObjectExist(key: string): Promise<boolean> {
+  if (!isR2Configured()) {
+    throw new Error("Cloudflare R2 nao configurado");
+  }
+
+  try {
+    const s3Client = getR2Client();
+    const command = new HeadObjectCommand({
+      Bucket: process.env.CLOUDFLARE_BUCKET_NAME!,
+      Key: key,
+    });
+
+    await s3Client.send(command);
+    return true;
+  } catch (error: any) {
+    const statusCode = error?.$metadata?.httpStatusCode;
+    if (error?.Code === "NotFound" || statusCode === 404) {
+      return false;
+    }
+
+    console.error("❌ Failed to verify R2 object:", {
+      key,
+      error: error?.message,
+      code: error?.Code,
+      statusCode,
+    });
+    throw error;
+  }
+}
+
+/**
  * Generate signed URL for video streaming from Cloudflare R2
  */
 export async function generateStreamUrl(
@@ -109,6 +151,52 @@ export async function generateStreamUrl(
   } catch (error) {
     console.error("❌ Failed to generate R2 stream URL:", error);
     throw error;
+  }
+}
+
+/**
+ * Backup a file to the secondary R2 bucket (same account).
+ */
+export async function backupFileToR2(key: string): Promise<boolean> {
+  if (!isR2BackupConfigured()) {
+    return false;
+  }
+
+  const sourceBucket = process.env.CLOUDFLARE_BUCKET_NAME!;
+  const backupBucket = process.env.CLOUDFLARE_BACKUP_BUCKET_NAME!;
+
+  if (backupBucket === sourceBucket) {
+    console.warn("⚠️ Backup bucket igual ao bucket principal. Ignorando backup.");
+    return false;
+  }
+
+  try {
+    const s3Client = getR2Client();
+    const encodedKey = encodeURIComponent(key).replace(/%2F/g, "/");
+    const copySource = `${sourceBucket}/${encodedKey}`;
+
+    const command = new CopyObjectCommand({
+      Bucket: backupBucket,
+      Key: key,
+      CopySource: copySource,
+    });
+
+    await s3Client.send(command);
+
+    console.log("✅ Backup realizado no R2:", {
+      key,
+      from: sourceBucket,
+      to: backupBucket,
+    });
+    return true;
+  } catch (error: any) {
+    console.error("❌ Falha ao fazer backup no R2:", {
+      key,
+      error: error?.message,
+      code: error?.Code,
+      statusCode: error?.$metadata?.httpStatusCode,
+    });
+    return false;
   }
 }
 
@@ -309,6 +397,8 @@ export function getR2Config() {
     configured: isR2Configured(),
     accountId: process.env.CLOUDFLARE_ACCOUNT_ID ? "***" : undefined,
     bucketName: process.env.CLOUDFLARE_BUCKET_NAME,
+    backupBucketName: process.env.CLOUDFLARE_BACKUP_BUCKET_NAME,
+    backupConfigured: isR2BackupConfigured(),
     hasAccessKey: !!process.env.CLOUDFLARE_ACCESS_KEY_ID,
     hasSecretKey: !!process.env.CLOUDFLARE_SECRET_ACCESS_KEY,
   };

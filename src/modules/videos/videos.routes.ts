@@ -15,6 +15,8 @@ import {
   generateUploadUrl,
   generateStreamUrl,
   isR2Configured,
+  doesR2ObjectExist,
+  backupFileToR2,
   uploadFileToR2,
   getR2FileStream,
   deleteFileFromR2,
@@ -583,6 +585,13 @@ export async function videoRoutes(fastify: FastifyInstance) {
           }
         }
 
+        const uploadExists = await doesR2ObjectExist(r2Key);
+        if (!uploadExists) {
+          return reply.status(400).send({
+            error: "Upload do vídeo não encontrado. Envie o arquivo antes de salvar.",
+          });
+        }
+
         // Create the video
         const newVideo = await db
           .insert(videos)
@@ -593,6 +602,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
             duration,
           })
           .returning();
+
+        void backupFileToR2(r2Key);
 
         // Deduct credits if cost > 0
         if (creditCost > 0) {

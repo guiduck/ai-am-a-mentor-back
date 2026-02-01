@@ -10,6 +10,7 @@ import { quizRoutes } from "./modules/quizzes/quizzes.routes";
 import { leadsRoutes } from "./modules/leads/leads.routes";
 import { subscriptionRoutes } from "./modules/subscriptions/subscriptions.routes";
 import { gamificationRoutes } from "./modules/gamification/gamification.routes";
+import { messagesRoutes } from "./modules/messages/messages.routes";
 
 export async function routes(fastify: FastifyInstance) {
   fastify.get("/health", async (request, reply) => {
@@ -27,4 +28,5 @@ export async function routes(fastify: FastifyInstance) {
   fastify.register(leadsRoutes, { prefix: "/api" });
   fastify.register(subscriptionRoutes, { prefix: "/api" });
   fastify.register(gamificationRoutes, { prefix: "/api" });
+  fastify.register(messagesRoutes, { prefix: "/api" });
 }
