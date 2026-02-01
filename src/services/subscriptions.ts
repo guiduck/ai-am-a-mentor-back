@@ -26,6 +26,7 @@ export interface PlanFeatures {
   certificates?: boolean;
   courses_access?: "purchased" | "all";
   progress_reports?: boolean;
+  chat_with_teacher?: boolean;
 }
 
 export interface SubscriptionPlan {

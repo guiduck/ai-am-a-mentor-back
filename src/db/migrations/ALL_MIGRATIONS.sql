@@ -275,7 +275,36 @@ SET features = jsonb_set(features::jsonb, '{commission_rate}', '0.0'::jsonb)::te
 WHERE name = 'creator_pro';
 
 -- ============================================================================
--- 8. STRIPE CONNECT V2 - PURCHASES, SUBSCRIPTIONS, REQUIREMENTS
+-- 8. UPDATE STUDENT PLAN FEATURES (CHAT + IA, SEM LIMITES ZERO)
+-- ============================================================================
+UPDATE subscription_plans
+SET features = jsonb_set(
+    jsonb_set(
+      jsonb_set(features::jsonb, '{courses_access}', '"purchased"'::jsonb),
+      '{chat_with_teacher}',
+      'false'::jsonb
+    ),
+    '{ai_questions_per_day}',
+    '0'::jsonb
+  )::text,
+    updated_at = NOW()
+WHERE name = 'student_free';
+
+UPDATE subscription_plans
+SET features = jsonb_set(
+    jsonb_set(
+      jsonb_set(features::jsonb, '{courses_access}', '"purchased"'::jsonb),
+      '{chat_with_teacher}',
+      'true'::jsonb
+    ),
+    '{ai_questions_per_day}',
+    '-1'::jsonb
+  )::text,
+    updated_at = NOW()
+WHERE name = 'student_family';
+
+-- ============================================================================
+-- 9. STRIPE CONNECT V2 - PURCHASES, SUBSCRIPTIONS, REQUIREMENTS
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS connected_account_purchases (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

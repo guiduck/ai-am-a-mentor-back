@@ -18,6 +18,8 @@ import { eq, and } from "drizzle-orm";
 import {
   createCreditsPaymentIntent,
   createCoursePaymentIntent,
+  createCardSetupIntent,
+  hasCustomerCard,
   verifyPaymentIntent,
   getOrCreateCustomer,
 } from "../../services/stripe";
@@ -318,6 +320,17 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           });
         }
 
+        if (paymentMethod === "card") {
+          const hasCard = await hasCustomerCard(customerId);
+          if (!hasCard) {
+            return reply.status(409).send({
+              error:
+                "Você precisa cadastrar um cartão para continuar. Vamos te levar para esse passo.",
+              code: "CARD_REQUIRED",
+            });
+          }
+        }
+
         // Create payment intent with specified method (card or boleto)
         const result = await createCreditsPaymentIntent(
           chargeAmount,
@@ -374,8 +387,9 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     handler: async (request, reply) => {
       try {
         const userId = request.user.id;
-        const { courseId, paymentMethod } =
-          createCoursePaymentSchema.parse(request.body);
+        const { courseId, paymentMethod } = createCoursePaymentSchema.parse(
+          request.body
+        );
 
         // Verify course exists
         const course = await getCourseById(courseId);
@@ -411,8 +425,8 @@ export async function paymentRoutes(fastify: FastifyInstance) {
         const termsAcceptance = await getCreatorTermsAcceptance(creator.id);
         if (!termsAcceptance) {
           return reply.status(400).send({
-            error:
-              "O criador deste curso ainda não aceitou os termos de venda",
+            error: "O criador deste curso ainda não aceitou os termos de venda",
+            code: "CREATOR_TERMS_REQUIRED",
           });
         }
 
@@ -425,6 +439,17 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           return reply.status(500).send({
             error: customerError || "Falha ao criar cliente no Stripe",
           });
+        }
+
+        if (paymentMethod === "card") {
+          const hasCard = await hasCustomerCard(customerId);
+          if (!hasCard) {
+            return reply.status(409).send({
+              error:
+                "Você precisa cadastrar um cartão para continuar. Vamos te levar para esse passo.",
+              code: "CARD_REQUIRED",
+            });
+          }
         }
 
         const {
@@ -487,7 +512,8 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
           if (intentResult.error || !intentResult.clientSecret) {
             return reply.status(500).send({
-              error: intentResult.error || "Falha ao criar intenção de pagamento",
+              error:
+                intentResult.error || "Falha ao criar intenção de pagamento",
             });
           }
 
@@ -707,7 +733,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
         if (!process.env.STRIPE_WEBHOOK_SECRET) {
           console.error("STRIPE_WEBHOOK_SECRET not configured");
-        return reply.status(500).send({ error: "Webhook nao configurado" });
+          return reply.status(500).send({ error: "Webhook nao configurado" });
         }
 
         // Verify webhook signature
@@ -747,10 +773,11 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
             // Create enrollment + purchase record if course purchase
             if (payment.paymentType === "course" && payment.courseId) {
-              const existingPurchase =
-                await db.query.coursePurchases.findFirst({
+              const existingPurchase = await db.query.coursePurchases.findFirst(
+                {
                   where: eq(coursePurchases.paymentId, payment.id),
-                });
+                }
+              );
 
               if (!existingPurchase) {
                 await db.insert(coursePurchases).values({
@@ -779,6 +806,53 @@ export async function paymentRoutes(fastify: FastifyInstance) {
         return reply
           .status(400)
           .send({ error: `Webhook Error: ${error.message}` });
+      }
+    },
+  });
+
+  // --------------------------------------------------------------------------
+  // Card Setup Routes
+  // --------------------------------------------------------------------------
+
+  /**
+   * POST /payments/cards/setup-intent - Create setup intent for saving a card
+   */
+  fastify.post("/payments/cards/setup-intent", {
+    preHandler: [fastify.authenticate],
+    handler: async (request, reply) => {
+      try {
+        const userId = request.user.id;
+        const user = await getUserById(userId);
+        if (!user) {
+          return reply.status(404).send({ error: "Usuário não encontrado" });
+        }
+
+        const { customerId, error: customerError } = await getOrCreateCustomer(
+          userId,
+          user.email
+        );
+        if (customerError || !customerId) {
+          return reply.status(500).send({
+            error: customerError || "Falha ao criar cliente no Stripe",
+          });
+        }
+
+        const setupIntent = await createCardSetupIntent(customerId);
+        if (setupIntent.error || !setupIntent.clientSecret) {
+          return reply.status(500).send({
+            error: setupIntent.error || "Falha ao iniciar cadastro de cartão",
+          });
+        }
+
+        return {
+          clientSecret: setupIntent.clientSecret,
+          setupIntentId: setupIntent.setupIntentId,
+        };
+      } catch (error: any) {
+        console.error("Error creating setup intent:", error);
+        return reply.status(500).send({
+          error: error.message || "Falha ao iniciar cadastro de cartão",
+        });
       }
     },
   });

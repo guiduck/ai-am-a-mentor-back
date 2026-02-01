@@ -19,6 +19,12 @@ interface PaymentIntentResult {
   error?: string;
 }
 
+interface SetupIntentResult {
+  clientSecret: string;
+  setupIntentId: string;
+  error?: string;
+}
+
 /**
  * Create a Payment Intent for purchasing credits
  * @param paymentMethod - "card" or "boleto"
@@ -189,6 +195,52 @@ export async function getOrCreateCustomer(
     return {
       customerId: "",
       error: error.message || "Falha ao obter ou criar o cliente",
+    };
+  }
+}
+
+/**
+ * Verifica se o cliente possui cartão salvo.
+ */
+export async function hasCustomerCard(customerId: string): Promise<boolean> {
+  try {
+    const stripe = getStripeClient();
+    const paymentMethods = await stripe.paymentMethods.list({
+      customer: customerId,
+      type: "card",
+      limit: 1,
+    });
+    return paymentMethods.data.length > 0;
+  } catch (error: any) {
+    console.error("Error checking customer cards:", error);
+    return false;
+  }
+}
+
+/**
+ * Cria SetupIntent para cadastrar cartão para compras futuras.
+ */
+export async function createCardSetupIntent(
+  customerId: string
+): Promise<SetupIntentResult> {
+  try {
+    const stripe = getStripeClient();
+    const setupIntent = await stripe.setupIntents.create({
+      customer: customerId,
+      payment_method_types: ["card"],
+      usage: "off_session",
+    });
+
+    return {
+      clientSecret: setupIntent.client_secret || "",
+      setupIntentId: setupIntent.id,
+    };
+  } catch (error: any) {
+    console.error("Error creating setup intent:", error);
+    return {
+      clientSecret: "",
+      setupIntentId: "",
+      error: error.message || "Falha ao criar o cadastro de cartão",
     };
   }
 }
