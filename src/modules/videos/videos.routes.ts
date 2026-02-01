@@ -70,6 +70,20 @@ const chatSchema = z.object({
   question: z.string().min(1, "Pergunta é obrigatória"),
 });
 
+/**
+ * Try to apply subscription credits without crashing on missing export.
+ */
+async function ensureSubscriptionCreditsSafely(userId: string): Promise<void> {
+  if (typeof ensureSubscriptionCredits !== "function") {
+    console.error(
+      "ensureSubscriptionCredits indisponível. Verifique build/deploy do serviço."
+    );
+    return;
+  }
+
+  await ensureSubscriptionCredits(userId);
+}
+
 export async function videoRoutes(fastify: FastifyInstance) {
   // Generate presigned URL for direct upload to Cloudflare R2
   fastify.post("/videos/upload-direct", {
@@ -453,7 +467,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
         if (userRole === "creator") {
           const chatCost = calculateAIChatCost();
-          await ensureSubscriptionCredits(userId);
+          await ensureSubscriptionCreditsSafely(userId);
           const balance = await getUserCredits(userId);
           if (balance < chatCost) {
             return reply.status(402).send({
@@ -555,7 +569,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
           creditCost = calculateVideoUploadCost(duration);
 
           // Check if creator has enough credits
-          await ensureSubscriptionCredits(creatorId);
+          await ensureSubscriptionCreditsSafely(creatorId);
           const balance = await getUserCredits(creatorId);
           if (balance < creditCost) {
             return reply.status(402).send({

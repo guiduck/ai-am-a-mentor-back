@@ -9,17 +9,20 @@ import {
   userSubscriptions,
   usageLimits,
   users,
+  transactions,
 } from "../db/schema";
 import { eq, and, gte, lte } from "drizzle-orm";
 import Stripe from "stripe";
 import { getStripeClient } from "./stripe-client";
 import { resolvePaymentAmount } from "./payment-bypass";
+import { addCredits } from "./credits";
 
 // Types
 export interface PlanFeatures {
   courses: number; // -1 = unlimited
   videos: number; // -1 = unlimited
   quizzes_per_month: number; // -1 = unlimited
+  credits_per_month?: number;
   commission_rate: number; // 0.05 = 5%
   ai_questions_per_day: number; // -1 = unlimited
   support: "community" | "email" | "priority";
@@ -179,10 +182,56 @@ export async function getUserPlanFeatures(userId: string): Promise<PlanFeatures>
     courses: 1,
     videos: 10,
     quizzes_per_month: 0,
+    credits_per_month: user?.role === "creator" ? 5 : 0,
     commission_rate: 0.05,
     ai_questions_per_day: 5,
     support: "community",
   };
+}
+
+/**
+ * Garante que créditos mensais do plano sejam concedidos no ciclo atual.
+ * Usa o histórico de transações para evitar duplicidade.
+ */
+export async function ensureSubscriptionCredits(userId: string): Promise<void> {
+  const subscription = await getUserSubscription(userId);
+  const features = subscription?.plan.features ?? (await getUserPlanFeatures(userId));
+  const monthlyCredits =
+    typeof features.credits_per_month === "number" ? features.credits_per_month : 0;
+
+  if (monthlyCredits <= 0) {
+    return;
+  }
+
+  const now = new Date();
+  const periodStart =
+    subscription?.currentPeriodStart ?? new Date(now.getFullYear(), now.getMonth(), 1);
+  const periodEnd =
+    subscription?.currentPeriodEnd ??
+    new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+  const existingCredit = await db.query.transactions.findFirst({
+    where: and(
+      eq(transactions.userId, userId),
+      eq(transactions.type, "subscription_credit"),
+      gte(transactions.createdAt, periodStart),
+      lte(transactions.createdAt, periodEnd)
+    ),
+  });
+
+  if (existingCredit) {
+    return;
+  }
+
+  const planLabel = subscription?.plan.displayName ?? "plano gratuito";
+  await addCredits(
+    userId,
+    monthlyCredits,
+    `Créditos mensais do ${planLabel}`,
+    subscription?.id,
+    "subscription",
+    "subscription_credit"
+  );
 }
 
 /**

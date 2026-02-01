@@ -96,6 +96,20 @@ function resolveRequestIp(request: any): string {
 }
 
 /**
+ * Try to apply subscription credits without crashing on missing export.
+ */
+async function ensureSubscriptionCreditsSafely(userId: string): Promise<void> {
+  if (typeof ensureSubscriptionCredits !== "function") {
+    console.error(
+      "ensureSubscriptionCredits indisponível. Verifique build/deploy do serviço."
+    );
+    return;
+  }
+
+  await ensureSubscriptionCredits(userId);
+}
+
+/**
  * Get user by ID with error handling
  */
 async function getUserById(userId: string) {
@@ -164,7 +178,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     handler: async (request, reply) => {
       try {
         const userId = request.user.id;
-        await ensureSubscriptionCredits(userId);
+        await ensureSubscriptionCreditsSafely(userId);
         const creditBalance = await getUserCreditBalance(userId);
 
         return {
@@ -681,7 +695,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     handler: async (request, reply) => {
       try {
         const userId = request.user.id;
-        await ensureSubscriptionCredits(userId);
+        await ensureSubscriptionCreditsSafely(userId);
         const schema = z.object({
           amount: z.number().int().positive(),
           feature: z.enum(["question", "quiz_generation"]),

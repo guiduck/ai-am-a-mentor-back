@@ -39,6 +39,20 @@ const submitQuizSchema = z.object({
 // Helper Functions
 // ============================================================================
 
+/**
+ * Try to apply subscription credits without crashing on missing export.
+ */
+async function ensureSubscriptionCreditsSafely(userId: string): Promise<void> {
+  if (typeof ensureSubscriptionCredits !== "function") {
+    console.error(
+      "ensureSubscriptionCredits indisponível. Verifique build/deploy do serviço."
+    );
+    return;
+  }
+
+  await ensureSubscriptionCredits(userId);
+}
+
 async function isCreatorOfVideo(
   userId: string,
   videoId: string
@@ -132,7 +146,7 @@ export async function quizRoutes(fastify: FastifyInstance) {
         }
 
         // Check credits
-        await ensureSubscriptionCredits(userId);
+        await ensureSubscriptionCreditsSafely(userId);
         const creditCost = estimateQuizCreditCost(numQuestions);
         const currentCredits = await getUserCredits(userId);
 
