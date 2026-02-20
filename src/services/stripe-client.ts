@@ -13,7 +13,9 @@ let stripeClient: Stripe | null = null;
 export function getStripeClient(): Stripe {
   if (!process.env.STRIPE_SECRET_KEY) {
     // TODO: Defina STRIPE_SECRET_KEY no ambiente (.env/Render).
-    throw new Error("STRIPE_SECRET_KEY não configurada. Defina a chave da Stripe.");
+    throw new Error(
+      "STRIPE_SECRET_KEY não configurada. Defina a chave da Stripe."
+    );
   }
 
   if (!stripeClient) {

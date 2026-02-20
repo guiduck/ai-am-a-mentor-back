@@ -26,10 +26,7 @@ const messageSchema = z.object({
 const startConversationSchema = z.object({
   courseId: z.string().uuid("Curso inválido"),
   recipientId: z.string().uuid("Usuário inválido").optional(),
-  message: z
-    .string()
-    .min(1, "Mensagem obrigatória")
-    .max(2000, "Mensagem muito longa"),
+  message: z.string().max(2000, "Mensagem muito longa").optional(),
 });
 
 const listMessagesQuerySchema = z.object({
@@ -200,7 +197,11 @@ export async function messagesRoutes(fastify: FastifyInstance) {
 
           const grouped: Record<
             string,
-            { courseId: string; courseTitle: string; students: { id: string; name: string }[] }
+            {
+              courseId: string;
+              courseTitle: string;
+              students: { id: string; name: string }[];
+            }
           > = {};
 
           rows.forEach((row) => {
@@ -280,21 +281,23 @@ export async function messagesRoutes(fastify: FastifyInstance) {
 
         const formatted = await Promise.all(
           list.map(async (conversation) => {
-          const isCreator = conversation.creatorId === userId;
-          const participant = isCreator ? conversation.student : conversation.creator;
-          const unreadCount = await getUnreadCount(conversation.id, userId);
+            const isCreator = conversation.creatorId === userId;
+            const participant = isCreator
+              ? conversation.student
+              : conversation.creator;
+            const unreadCount = await getUnreadCount(conversation.id, userId);
 
-          return {
-            id: conversation.id,
-            courseId: conversation.courseId,
-            courseTitle: conversation.course.title,
-            participantId: participant.id,
-            participantName: participant.username,
-            lastMessageAt: conversation.lastMessageAt,
-            createdAt: conversation.createdAt,
-            unreadCount,
-          };
-        })
+            return {
+              id: conversation.id,
+              courseId: conversation.courseId,
+              courseTitle: conversation.course.title,
+              participantId: participant.id,
+              participantName: participant.username,
+              lastMessageAt: conversation.lastMessageAt,
+              createdAt: conversation.createdAt,
+              unreadCount,
+            };
+          })
         );
 
         return { conversations: formatted };
@@ -333,8 +336,13 @@ export async function messagesRoutes(fastify: FastifyInstance) {
           return reply.status(404).send({ error: "Conversa não encontrada" });
         }
 
-        if (conversation.creatorId !== userId && conversation.studentId !== userId) {
-          return reply.status(403).send({ error: "Você não tem acesso a esta conversa" });
+        if (
+          conversation.creatorId !== userId &&
+          conversation.studentId !== userId
+        ) {
+          return reply
+            .status(403)
+            .send({ error: "Você não tem acesso a esta conversa" });
         }
 
         return {
@@ -375,13 +383,21 @@ export async function messagesRoutes(fastify: FastifyInstance) {
         }
 
         const userId = request.user.id;
-        if (conversation.creatorId !== userId && conversation.studentId !== userId) {
-          return reply.status(403).send({ error: "Você não tem acesso a esta conversa" });
+        if (
+          conversation.creatorId !== userId &&
+          conversation.studentId !== userId
+        ) {
+          return reply
+            .status(403)
+            .send({ error: "Você não tem acesso a esta conversa" });
         }
 
         const messageList = await db.query.messages.findMany({
           where: sinceDate
-            ? and(eq(messages.conversationId, id), gt(messages.createdAt, sinceDate))
+            ? and(
+                eq(messages.conversationId, id),
+                gt(messages.createdAt, sinceDate)
+              )
             : eq(messages.conversationId, id),
           orderBy: (message, { asc }) => [asc(message.createdAt)],
           limit: 100,
@@ -419,11 +435,15 @@ export async function messagesRoutes(fastify: FastifyInstance) {
 
         if (role === "creator") {
           if (course.creatorId !== userId) {
-            return reply.status(403).send({ error: "Curso inválido para este criador" });
+            return reply
+              .status(403)
+              .send({ error: "Curso inválido para este criador" });
           }
 
           if (!data.recipientId) {
-            return reply.status(400).send({ error: "Selecione um aluno para iniciar a conversa" });
+            return reply
+              .status(400)
+              .send({ error: "Selecione um aluno para iniciar a conversa" });
           }
 
           const enrollment = await db.query.enrollments.findFirst({
@@ -462,6 +482,8 @@ export async function messagesRoutes(fastify: FastifyInstance) {
           return reply.status(403).send({ error: chatAccess.reason });
         }
 
+        const message = data.message?.trim();
+
         let conversation = await db.query.conversations.findFirst({
           where: and(
             eq(conversations.courseId, course.id),
@@ -477,7 +499,7 @@ export async function messagesRoutes(fastify: FastifyInstance) {
               courseId: course.id,
               creatorId,
               studentId,
-              lastMessageAt: new Date(),
+              lastMessageAt: message ? new Date() : null,
               updatedAt: new Date(),
             })
             .returning();
@@ -485,12 +507,19 @@ export async function messagesRoutes(fastify: FastifyInstance) {
           conversation = created;
         }
 
+        if (!message) {
+          return {
+            conversationId: conversation.id,
+            messageId: null,
+          };
+        }
+
         const [createdMessage] = await db
           .insert(messages)
           .values({
             conversationId: conversation.id,
             senderId: userId,
-            body: data.message,
+            body: message,
             createdAt: new Date(),
           })
           .returning();
@@ -517,7 +546,7 @@ export async function messagesRoutes(fastify: FastifyInstance) {
             conversationId: conversation.id,
             senderName: sender.username,
             courseTitle: course.title,
-            messageBody: data.message,
+            messageBody: message,
           });
         }
 
@@ -528,7 +557,10 @@ export async function messagesRoutes(fastify: FastifyInstance) {
       } catch (error: any) {
         console.error("Error starting conversation:", error);
         if (error instanceof z.ZodError) {
-          return reply.status(400).send({ error: error.issues });
+          return reply.status(400).send({
+            error: "Dados inválidos",
+            details: error.issues,
+          });
         }
         return reply.status(500).send({
           error: "Falha ao iniciar conversa",
@@ -558,11 +590,18 @@ export async function messagesRoutes(fastify: FastifyInstance) {
           return reply.status(404).send({ error: "Conversa não encontrada" });
         }
 
-        if (conversation.creatorId !== userId && conversation.studentId !== userId) {
-          return reply.status(403).send({ error: "Você não tem acesso a esta conversa" });
+        if (
+          conversation.creatorId !== userId &&
+          conversation.studentId !== userId
+        ) {
+          return reply
+            .status(403)
+            .send({ error: "Você não tem acesso a esta conversa" });
         }
 
-        const chatAccess = await ensureCreatorChatAccess(conversation.creatorId);
+        const chatAccess = await ensureCreatorChatAccess(
+          conversation.creatorId
+        );
         if (!chatAccess.allowed) {
           return reply.status(403).send({ error: chatAccess.reason });
         }
@@ -639,8 +678,13 @@ export async function messagesRoutes(fastify: FastifyInstance) {
           return reply.status(404).send({ error: "Conversa não encontrada" });
         }
 
-        if (conversation.creatorId !== userId && conversation.studentId !== userId) {
-          return reply.status(403).send({ error: "Você não tem acesso a esta conversa" });
+        if (
+          conversation.creatorId !== userId &&
+          conversation.studentId !== userId
+        ) {
+          return reply
+            .status(403)
+            .send({ error: "Você não tem acesso a esta conversa" });
         }
 
         const conversationMessages = await db.query.messages.findMany({
@@ -664,7 +708,9 @@ export async function messagesRoutes(fastify: FastifyInstance) {
           columns: { messageId: true },
         });
 
-        const existingIds = new Set(existingReads.map((read) => read.messageId));
+        const existingIds = new Set(
+          existingReads.map((read) => read.messageId)
+        );
         const newReads = unreadIds.filter((id) => !existingIds.has(id));
 
         if (newReads.length === 0) {
