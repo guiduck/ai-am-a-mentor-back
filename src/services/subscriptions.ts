@@ -126,7 +126,7 @@ export async function getPlanByName(name: string): Promise<SubscriptionPlan | nu
 export async function getUserSubscription(
   userId: string
 ): Promise<UserSubscription | null> {
-  const subscription = await db.query.userSubscriptions.findFirst({
+  let subscription = await db.query.userSubscriptions.findFirst({
     where: and(
       eq(userSubscriptions.userId, userId),
       inArray(userSubscriptions.status, ["active", "trialing"])
@@ -143,6 +143,30 @@ export async function getUserSubscription(
     }
 
     return getUserSubscription(userId);
+  }
+
+  const currentFeatures = JSON.parse(subscription.plan.features) as PlanFeatures;
+  const isFreeOrCommunityPlan =
+    parseFloat(subscription.plan.price) === 0 || currentFeatures.support === "community";
+
+  if (isFreeOrCommunityPlan) {
+    const synced = await syncSubscriptionFromStripe(userId);
+
+    if (synced) {
+      subscription = await db.query.userSubscriptions.findFirst({
+        where: and(
+          eq(userSubscriptions.userId, userId),
+          inArray(userSubscriptions.status, ["active", "trialing"])
+        ),
+        with: {
+          plan: true,
+        },
+      });
+
+      if (!subscription) {
+        return null;
+      }
+    }
   }
 
   return {
@@ -236,17 +260,19 @@ async function syncSubscriptionFromStripe(
       return null;
     }
 
+    const stripeSubscription = activeSubscription as any;
+
     await db
       .update(userSubscriptions)
       .set({
         status: activeSubscription.status,
-        currentPeriodStart: activeSubscription.current_period_start
-          ? new Date(activeSubscription.current_period_start * 1000)
+        currentPeriodStart: stripeSubscription.current_period_start
+          ? new Date(stripeSubscription.current_period_start * 1000)
           : null,
-        currentPeriodEnd: activeSubscription.current_period_end
-          ? new Date(activeSubscription.current_period_end * 1000)
+        currentPeriodEnd: stripeSubscription.current_period_end
+          ? new Date(stripeSubscription.current_period_end * 1000)
           : null,
-        cancelAtPeriodEnd: activeSubscription.cancel_at_period_end ? 1 : 0,
+        cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end ? 1 : 0,
         updatedAt: new Date(),
       })
       .where(eq(userSubscriptions.stripeSubscriptionId, activeSubscription.id));
