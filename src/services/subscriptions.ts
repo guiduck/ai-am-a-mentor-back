@@ -12,7 +12,7 @@ import {
   userCredits,
   transactions,
 } from "../db/schema";
-import { eq, and, gte, lte, sql } from "drizzle-orm";
+import { eq, and, gte, inArray, lte, sql } from "drizzle-orm";
 import Stripe from "stripe";
 import { getStripeClient } from "./stripe-client";
 import { resolvePaymentAmount } from "./payment-bypass";
@@ -129,14 +129,21 @@ export async function getUserSubscription(
   const subscription = await db.query.userSubscriptions.findFirst({
     where: and(
       eq(userSubscriptions.userId, userId),
-      eq(userSubscriptions.status, "active")
+      inArray(userSubscriptions.status, ["active", "trialing"])
     ),
     with: {
       plan: true,
     },
   });
 
-  if (!subscription) return null;
+  if (!subscription) {
+    const synced = await syncSubscriptionFromStripe(userId);
+    if (!synced) {
+      return null;
+    }
+
+    return getUserSubscription(userId);
+  }
 
   return {
     id: subscription.id,
@@ -158,6 +165,97 @@ export async function getUserSubscription(
     currentPeriodEnd: subscription.currentPeriodEnd,
     cancelAtPeriodEnd: subscription.cancelAtPeriodEnd === 1,
   };
+}
+
+/**
+ * Tenta sincronizar assinatura ativa do Stripe quando o webhook falhou.
+ */
+async function syncSubscriptionFromStripe(
+  userId: string
+): Promise<{ subscriptionId: string } | null> {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    return null;
+  }
+
+  try {
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { email: true },
+    });
+
+    if (!user?.email) {
+      return null;
+    }
+
+    const stripe = getStripeClient();
+    const customers = await stripe.customers.list({
+      email: user.email,
+      limit: 1,
+    });
+
+    const customer = customers.data[0];
+    if (!customer) {
+      return null;
+    }
+
+    const subscriptions = await stripe.subscriptions.list({
+      customer: customer.id,
+      status: "all",
+      limit: 3,
+    });
+
+    const activeSubscription = subscriptions.data.find((subscription) =>
+      ["active", "trialing"].includes(subscription.status)
+    );
+
+    if (!activeSubscription) {
+      return null;
+    }
+
+    const priceId = activeSubscription.items.data[0]?.price?.id;
+    if (!priceId) {
+      return null;
+    }
+
+    const plan = await db.query.subscriptionPlans.findFirst({
+      where: eq(subscriptionPlans.stripePriceId, priceId),
+    });
+
+    if (!plan) {
+      return null;
+    }
+
+    const result = await createUserSubscription(
+      userId,
+      plan.id,
+      activeSubscription.id,
+      customer.id
+    );
+
+    if ("error" in result) {
+      return null;
+    }
+
+    await db
+      .update(userSubscriptions)
+      .set({
+        status: activeSubscription.status,
+        currentPeriodStart: activeSubscription.current_period_start
+          ? new Date(activeSubscription.current_period_start * 1000)
+          : null,
+        currentPeriodEnd: activeSubscription.current_period_end
+          ? new Date(activeSubscription.current_period_end * 1000)
+          : null,
+        cancelAtPeriodEnd: activeSubscription.cancel_at_period_end ? 1 : 0,
+        updatedAt: new Date(),
+      })
+      .where(eq(userSubscriptions.stripeSubscriptionId, activeSubscription.id));
+
+    return { subscriptionId: result.subscriptionId };
+  } catch (error) {
+    console.error("Erro ao sincronizar assinatura do Stripe:", error);
+    return null;
+  }
 }
 
 /**
