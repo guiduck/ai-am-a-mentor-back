@@ -414,6 +414,11 @@ export async function createSubscriptionCheckout(
 
     const stripePriceId = plan.stripePriceId ?? "";
     if (!stripePriceId && !bypassApplied) {
+      console.error("Subscription checkout blocked: missing stripe price id", {
+        userId,
+        planId,
+        planName: plan.name,
+      });
       return { error: "Plano não configurado para pagamento" };
     }
 
@@ -449,14 +454,32 @@ export async function createSubscriptionCheckout(
       payment_method_types: ["card"],
       line_items: lineItems,
       customer_email: email,
+      client_reference_id: userId,
       metadata: {
         userId,
         planId,
         planName: plan.name,
         bypassApplied: String(bypassApplied),
       },
+      subscription_data: {
+        metadata: {
+          userId,
+          planId,
+          planName: plan.name,
+        },
+      },
       success_url: `${process.env.FRONTEND_URL}/payments?success=true&plan=${plan.name}`,
       cancel_url: `${process.env.FRONTEND_URL}/payments?cancelled=true`,
+    });
+
+    console.log("✅ Subscription checkout session created", {
+      sessionId: session.id,
+      userId,
+      planId,
+      planName: plan.name,
+      stripePriceId: stripePriceId || null,
+      bypassApplied,
+      customerEmail: email,
     });
 
     return { sessionUrl: session.url || "" };
@@ -476,6 +499,13 @@ export async function createUserSubscription(
   stripeCustomerId?: string
 ): Promise<{ subscriptionId: string } | { error: string }> {
   try {
+    console.log("🔄 Creating user subscription", {
+      userId,
+      planId,
+      stripeSubscriptionId: stripeSubscriptionId || null,
+      stripeCustomerId: stripeCustomerId || null,
+    });
+
     // Cancel any existing active subscription
     await db
       .update(userSubscriptions)
@@ -507,6 +537,12 @@ export async function createUserSubscription(
 
     // Initialize usage limits for this period
     await initializeUsageLimits(userId, now, periodEnd);
+
+    console.log("✅ User subscription created", {
+      subscriptionId: newSubscription.id,
+      userId,
+      planId,
+    });
 
     return { subscriptionId: newSubscription.id };
   } catch (error: any) {

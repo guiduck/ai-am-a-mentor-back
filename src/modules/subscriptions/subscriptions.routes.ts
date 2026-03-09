@@ -208,25 +208,52 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
     },
     handler: async (request, reply) => {
       const signature = request.headers["stripe-signature"] as string;
+      const webhookSecret =
+        process.env.STRIPE_SUBSCRIPTION_WEBHOOK_SECRET ||
+        process.env.STRIPE_WEBHOOK_SECRET;
 
       if (!signature) {
         return reply.status(400).send({ error: "Missing signature" });
+      }
+
+      if (!webhookSecret) {
+        console.error("Subscription webhook secret not configured");
+        return reply.status(500).send({ error: "Webhook não configurado" });
       }
 
       try {
         const Stripe = require("stripe");
         const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+        console.log("📩 Subscription webhook received", {
+          hasSignature: !!signature,
+          usingFallbackSecret: !process.env.STRIPE_SUBSCRIPTION_WEBHOOK_SECRET,
+        });
+
         const event = stripe.webhooks.constructEvent(
           (request as any).rawBody,
           signature,
-          process.env.STRIPE_SUBSCRIPTION_WEBHOOK_SECRET
+          webhookSecret
         );
+
+        console.log("📩 Subscription webhook event", {
+          type: event.type,
+          eventId: event.id,
+        });
 
         switch (event.type) {
           case "checkout.session.completed": {
             const session = event.data.object;
             const { userId, planId } = session.metadata;
+
+            console.log("📩 checkout.session.completed", {
+              sessionId: session.id,
+              mode: session.mode,
+              userId: userId || null,
+              planId: planId || null,
+              subscriptionId: session.subscription || null,
+              customerId: session.customer || null,
+            });
 
             if (session.mode === "subscription" && userId && planId) {
               await createUserSubscription(
@@ -242,6 +269,11 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
 
           case "customer.subscription.updated": {
             const subscription = event.data.object;
+            console.log("📩 customer.subscription.updated", {
+              subscriptionId: subscription.id,
+              status: subscription.status,
+              metadata: subscription.metadata || {},
+            });
             await db
               .update(userSubscriptions)
               .set({
@@ -262,6 +294,9 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
 
           case "customer.subscription.deleted": {
             const subscription = event.data.object;
+            console.log("📩 customer.subscription.deleted", {
+              subscriptionId: subscription.id,
+            });
             await db
               .update(userSubscriptions)
               .set({
@@ -284,7 +319,7 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
 
         return { received: true };
       } catch (error: any) {
-        console.error("Webhook error:", error);
+        console.error("Subscription webhook error:", error);
         return reply.status(400).send({ error: error.message });
       }
     },
