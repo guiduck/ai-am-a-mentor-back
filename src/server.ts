@@ -1,4 +1,5 @@
 import Fastify, { FastifyError } from "fastify";
+import fastifyRawBody from "fastify-raw-body";
 import { routes } from "./routes";
 import authPlugin from "./plugins/auth";
 
@@ -25,6 +26,13 @@ fastify.register(require("@fastify/multipart"), {
 
 // Register cookie support
 fastify.register(require("@fastify/cookie"));
+
+// Stripe webhook signature verification requires the unparsed payload.
+fastify.register(fastifyRawBody, {
+  field: "rawBody",
+  global: false,
+  runFirst: true,
+});
 
 // Register CORS
 fastify.register(require("@fastify/cors"), {
