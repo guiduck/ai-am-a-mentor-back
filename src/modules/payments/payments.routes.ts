@@ -788,28 +788,41 @@ export async function paymentRoutes(fastify: FastifyInstance) {
    * POST /payments/webhook - Stripe webhook handler
    */
   fastify.post("/payments/webhook", {
+    config: {
+      rawBody: true,
+    },
     handler: async (request, reply) => {
       try {
         const sig = request.headers["stripe-signature"] as string;
-        const body = request.body;
+        const body = (request as any).rawBody;
+        const webhookSecret = process.env.STRIPE_PAYMENTS_WEBHOOK_SECRET;
 
-        if (!process.env.STRIPE_WEBHOOK_SECRET) {
-          console.error("STRIPE_WEBHOOK_SECRET not configured");
+        if (!webhookSecret) {
+          console.error("Payments webhook secret not configured");
           return reply.status(500).send({ error: "Webhook nao configurado" });
         }
 
         // Verify webhook signature
         const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-        const event = stripe.webhooks.constructEvent(
-          body,
-          sig,
-          process.env.STRIPE_WEBHOOK_SECRET
-        );
+        console.log("📩 Payments webhook received", {
+          hasSignature: !!sig,
+          usingLegacySecret: !process.env.STRIPE_PAYMENTS_WEBHOOK_SECRET,
+        });
+        const event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
+
+        console.log("📩 Payments webhook event", {
+          type: event.type,
+          eventId: event.id,
+        });
 
         // Handle payment_intent.succeeded
         if (event.type === "payment_intent.succeeded") {
           const paymentIntent = event.data.object;
           const paymentIntentId = paymentIntent.id;
+
+          console.log("📩 payment_intent.succeeded", {
+            paymentIntentId,
+          });
 
           const payment = await db.query.payments.findFirst({
             where: eq(payments.stripePaymentIntentId, paymentIntentId),

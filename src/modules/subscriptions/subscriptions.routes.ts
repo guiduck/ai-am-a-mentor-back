@@ -208,9 +208,7 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
     },
     handler: async (request, reply) => {
       const signature = request.headers["stripe-signature"] as string;
-      const webhookSecret =
-        process.env.STRIPE_SUBSCRIPTION_WEBHOOK_SECRET ||
-        process.env.STRIPE_WEBHOOK_SECRET;
+      const webhookSecret = process.env.STRIPE_SUBSCRIPTIONS_WEBHOOK_SECRET;
 
       if (!signature) {
         return reply.status(400).send({ error: "Missing signature" });
@@ -227,7 +225,7 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
 
         console.log("📩 Subscription webhook received", {
           hasSignature: !!signature,
-          usingFallbackSecret: !process.env.STRIPE_SUBSCRIPTION_WEBHOOK_SECRET,
+          usingLegacySecret: !process.env.STRIPE_SUBSCRIPTIONS_WEBHOOK_SECRET,
         });
 
         const event = stripe.webhooks.constructEvent(
@@ -287,7 +285,9 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
                 cancelAtPeriodEnd: subscription.cancel_at_period_end ? 1 : 0,
                 updatedAt: new Date(),
               })
-              .where(eq(userSubscriptions.stripeSubscriptionId, subscription.id));
+              .where(
+                eq(userSubscriptions.stripeSubscriptionId, subscription.id)
+              );
             console.log(`📝 Subscription updated: ${subscription.id}`);
             break;
           }
@@ -304,7 +304,9 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
                 cancelAtPeriodEnd: 0,
                 updatedAt: new Date(),
               })
-              .where(eq(userSubscriptions.stripeSubscriptionId, subscription.id));
+              .where(
+                eq(userSubscriptions.stripeSubscriptionId, subscription.id)
+              );
             console.log(`❌ Subscription cancelled: ${subscription.id}`);
             break;
           }
