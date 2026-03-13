@@ -226,6 +226,9 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
         console.log("📩 Subscription webhook received", {
           hasSignature: !!signature,
           usingLegacySecret: !process.env.STRIPE_SUBSCRIPTIONS_WEBHOOK_SECRET,
+          rawBodyLength: (request as any).rawBody
+            ? String((request as any).rawBody).length
+            : 0,
         });
 
         const event = stripe.webhooks.constructEvent(
@@ -321,7 +324,14 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
 
         return { received: true };
       } catch (error: any) {
-        console.error("Subscription webhook error:", error);
+        console.error("Subscription webhook error:", {
+          message: error.message,
+          stack: error.stack,
+          hasSignature: !!signature,
+          rawBodyLength: (request as any).rawBody
+            ? String((request as any).rawBody).length
+            : 0,
+        });
         return reply.status(400).send({ error: error.message });
       }
     },

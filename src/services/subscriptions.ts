@@ -12,7 +12,7 @@ import {
   userCredits,
   transactions,
 } from "../db/schema";
-import { eq, and, gte, inArray, lte, sql } from "drizzle-orm";
+import { eq, and, gte, inArray, lte, sql, desc } from "drizzle-orm";
 import Stripe from "stripe";
 import { getStripeClient } from "./stripe-client";
 import { resolvePaymentAmount } from "./payment-bypass";
@@ -66,6 +66,72 @@ export interface UsageStatus {
   coursesLimit: number;
   periodStart: Date;
   periodEnd: Date;
+}
+
+type UserSubscriptionRecord = Awaited<
+  ReturnType<typeof loadCurrentSubscriptionRecord>
+>;
+
+/**
+ * Load the most recent active or trialing subscription deterministically.
+ */
+async function loadCurrentSubscriptionRecord(userId: string) {
+  return db.query.userSubscriptions.findFirst({
+    where: and(
+      eq(userSubscriptions.userId, userId),
+      inArray(userSubscriptions.status, ["active", "trialing"])
+    ),
+    with: {
+      plan: true,
+    },
+    orderBy: [
+      desc(userSubscriptions.currentPeriodStart),
+      desc(userSubscriptions.createdAt),
+    ],
+  });
+}
+
+/**
+ * Free/community plans should use the calendar month for credit grants.
+ */
+function isFreeOrCommunityPlan(
+  subscription: UserSubscriptionRecord | UserSubscription | null
+): boolean {
+  if (!subscription) {
+    return true;
+  }
+
+  const planPrice = parseFloat(subscription.plan.price.toString());
+  const features =
+    typeof subscription.plan.features === "string"
+      ? (JSON.parse(subscription.plan.features) as PlanFeatures)
+      : subscription.plan.features;
+
+  return planPrice === 0 || features.support === "community";
+}
+
+/**
+ * Resolve the stable period for monthly credit grants.
+ */
+function resolveCreditGrantPeriod(
+  subscription: UserSubscription | null,
+  now: Date
+): { periodStart: Date; periodEnd: Date } {
+  if (!subscription || isFreeOrCommunityPlan(subscription)) {
+    return {
+      periodStart: new Date(now.getFullYear(), now.getMonth(), 1),
+      periodEnd: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59),
+    };
+  }
+
+  return {
+    periodStart:
+      subscription.currentPeriodStart ??
+      new Date(now.getFullYear(), now.getMonth(), 1),
+    periodEnd:
+      subscription.currentPeriodEnd ??
+      new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59),
+  };
 }
 
 
@@ -126,15 +192,7 @@ export async function getPlanByName(name: string): Promise<SubscriptionPlan | nu
 export async function getUserSubscription(
   userId: string
 ): Promise<UserSubscription | null> {
-  let subscription = await db.query.userSubscriptions.findFirst({
-    where: and(
-      eq(userSubscriptions.userId, userId),
-      inArray(userSubscriptions.status, ["active", "trialing"])
-    ),
-    with: {
-      plan: true,
-    },
-  });
+  let subscription = await loadCurrentSubscriptionRecord(userId);
 
   if (!subscription) {
     const synced = await syncSubscriptionFromStripe(userId);
@@ -153,15 +211,7 @@ export async function getUserSubscription(
     const synced = await syncSubscriptionFromStripe(userId);
 
     if (synced) {
-      subscription = await db.query.userSubscriptions.findFirst({
-        where: and(
-          eq(userSubscriptions.userId, userId),
-          inArray(userSubscriptions.status, ["active", "trialing"])
-        ),
-        with: {
-          plan: true,
-        },
-      });
+      subscription = await loadCurrentSubscriptionRecord(userId);
 
       if (!subscription) {
         return null;
@@ -328,13 +378,18 @@ export async function ensureSubscriptionCredits(userId: string): Promise<void> {
   }
 
   const now = new Date();
-  const periodStart =
-    subscription?.currentPeriodStart ?? new Date(now.getFullYear(), now.getMonth(), 1);
-  const periodEnd =
-    subscription?.currentPeriodEnd ??
-    new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-
+  const { periodStart, periodEnd } = resolveCreditGrantPeriod(subscription, now);
   const planLabel = subscription?.plan.displayName ?? "plano gratuito";
+
+  console.log("💳 ensureSubscriptionCredits:start", {
+    userId,
+    planLabel,
+    monthlyCredits,
+    subscriptionId: subscription?.id ?? null,
+    subscriptionStatus: subscription?.status ?? null,
+    periodStart: periodStart.toISOString(),
+    periodEnd: periodEnd.toISOString(),
+  });
 
   await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
@@ -349,6 +404,11 @@ export async function ensureSubscriptionCredits(userId: string): Promise<void> {
     });
 
     if (existingCredit) {
+      console.log("💳 ensureSubscriptionCredits:skip-existing", {
+        userId,
+        existingTransactionId: existingCredit.id,
+        existingCreatedAt: existingCredit.createdAt?.toISOString?.() ?? null,
+      });
       return;
     }
 
@@ -382,6 +442,13 @@ export async function ensureSubscriptionCredits(userId: string): Promise<void> {
       description: `Créditos mensais do ${planLabel}`,
       relatedId: subscription?.id,
       relatedType: "subscription",
+    });
+
+    console.log("💳 ensureSubscriptionCredits:granted", {
+      userId,
+      amount: monthlyCredits,
+      planLabel,
+      subscriptionId: subscription?.id ?? null,
     });
   });
 }
@@ -513,7 +580,7 @@ export async function createUserSubscription(
       .where(
         and(
           eq(userSubscriptions.userId, userId),
-          eq(userSubscriptions.status, "active")
+          inArray(userSubscriptions.status, ["active", "trialing", "past_due"])
         )
       );
 

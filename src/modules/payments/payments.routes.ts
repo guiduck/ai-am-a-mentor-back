@@ -183,7 +183,20 @@ export async function paymentRoutes(fastify: FastifyInstance) {
     handler: async (request, reply) => {
       try {
         const userId = request.user.id;
-        await ensureSubscriptionCreditsSafely(userId);
+        const query = z
+          .object({
+            refreshSubscriptionCredits: z.coerce.boolean().optional().default(false),
+          })
+          .parse(request.query ?? {});
+
+        if (query.refreshSubscriptionCredits) {
+          console.log("💳 credits/balance:refresh-requested", {
+            userId,
+            requestId: request.id,
+          });
+          await ensureSubscriptionCreditsSafely(userId);
+        }
+
         const creditBalance = await getUserCreditBalance(userId);
 
         return {
@@ -807,6 +820,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
         console.log("📩 Payments webhook received", {
           hasSignature: !!sig,
           usingLegacySecret: !process.env.STRIPE_PAYMENTS_WEBHOOK_SECRET,
+          rawBodyLength: body ? String(body).length : 0,
         });
         const event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
 
@@ -877,7 +891,14 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
         return { received: true };
       } catch (error: any) {
-        console.error("Webhook error:", error);
+        console.error("Webhook error:", {
+          message: error.message,
+          stack: error.stack,
+          hasSignature: !!request.headers["stripe-signature"],
+          rawBodyLength: (request as any).rawBody
+            ? String((request as any).rawBody).length
+            : 0,
+        });
         return reply
           .status(400)
           .send({ error: `Webhook Error: ${error.message}` });
