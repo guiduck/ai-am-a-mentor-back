@@ -189,6 +189,12 @@ export async function paymentRoutes(fastify: FastifyInstance) {
           })
           .parse(request.query ?? {});
 
+        console.log("💳 credits/balance", {
+          userId,
+          requestId: request.id,
+          refreshSubscriptionCredits: query.refreshSubscriptionCredits,
+        });
+
         if (query.refreshSubscriptionCredits) {
           console.log("💳 credits/balance:refresh-requested", {
             userId,
